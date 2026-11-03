@@ -55,6 +55,15 @@ h2{font-family:var(--display);font-weight:700;font-size:20px;letter-spacing:.02e
 .next .what{flex:1;min-width:0}
 .next .dd{font-family:var(--display);font-weight:700;font-size:20px;line-height:1.1}
 .next .sub{font-size:13px;color:var(--muted)}
+.series{margin-top:8px}
+.series>.label{display:flex;align-items:center;gap:6px;margin-bottom:3px}
+.srow{display:grid;grid-template-columns:auto auto minmax(0,1fr) auto;gap:8px;align-items:center;padding:3px 6px;border-left:4px solid transparent;font-size:13px}
+.srow+.srow{border-top:1px solid var(--line)}
+.srow.ok{border-left-color:var(--td)}.srow.no{border-left-color:var(--to)}
+.srow .k{font-family:var(--display);font-weight:700;font-size:11px;letter-spacing:.06em;padding:0 4px;border-radius:4px;border:1px solid currentColor;min-width:38px;text-align:center}
+.srow .sdd{font-family:var(--display);font-weight:600;font-size:14px;white-space:nowrap}
+.srow .stx{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.srow .sy{font-family:var(--display);font-weight:600;font-size:14px;text-align:right;min-width:28px}
 .btns{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-top:8px}
 .tb{border:1px solid var(--line);background:var(--surface);border-radius:10px;min-height:44px;padding:4px 2px;font-family:var(--display);font-weight:600;font-size:14px;letter-spacing:.03em;line-height:1.05}
 .tb small{display:block;font-size:11px;color:var(--muted);font-weight:500}
@@ -367,7 +376,18 @@ function buildView(g, n){
   const score = last ? { away: last.away, home: last.home } : { away: 0, home: 0 };
   const lastDrive = last ? drives.find(d => d.first <= n-1 && n-1 <= Math.min(d.last, n-1) && d.plays.includes(last)) : null;
   return { n, total: g.plays.length, last, score, drives, away: team("away"), home: team("home"),
-    situation: situation(g, last, lastDrive), next: g.plays[n] || null };
+    situation: situation(g, last, lastDrive), next: g.plays[n] || null, series: seriesOf(lastDrive) };
+}
+/* Current set of downs: plays since the offense last earned a fresh 1st down (pure). */
+function seriesOf(d){
+  if (!d) return null;
+  const ps = d.plays.filter(p => p.kind !== "admin" && !/kickoff/i.test(p.typeText));
+  if (!ps.length) return null;
+  const startsSeries = (p, prev) => p.down === 1 && (!prev || prev.down !== 1 ||
+    (isOffense(prev.kind) && prev.yards >= prev.dist) || (prev.kind === "penalty" && prev.endDown === 1 && prev.down !== 1));
+  let start = 0;
+  ps.forEach((p, i) => { if (startsSeries(p, ps[i-1])) start = i; });
+  return { side: d.side, done: d.done, label: d.label, cat: d.cat, plays: ps.slice(start) };
 }
 function success(p){
   if (isTurnover(p)) return false;
@@ -624,6 +644,7 @@ function topHTML(g, v, now){
       <div class="score num"><span class="t">${teamDot(g.away)}${esc(g.away.abbr)}${possSide==="away"?'<span class="poss">●</span>':""} ${v.score.away}</span><span class="sep">–</span><span class="t">${v.score.home} ${esc(g.home.abbr)}${possSide==="home"?'<span class="poss">●</span>':""}${teamDot(g.home)}</span></div>
       <div class="status">${statusPill(c, now, g)}<span class="gclock num">${gclock}</span></div>
     </div>
+    ${seriesHTML(g, v.series)}
     <div class="next"><div class="what"><div class="label">Next snap</div>${nextLine}</div></div>
     <div class="btns">
       <button class="tb" data-act="prevDrive" ${disPrev}>‹‹<small>Drive</small></button>
@@ -643,6 +664,20 @@ function topHTML(g, v, now){
       <button class="tb" data-act="kickoff">Start<small>kickoff</small></button>
     </div>
   </div>`;
+}
+function seriesHTML(g, s){
+  if (!s) return "";
+  const rows = s.plays.map(p => {
+    const pr = passResult(p);
+    const k = pr ? { int: "INT", sack: "SACK", scramble: "SCRM", inc: "INC", comp: "PASS" }[pr]
+      : { run: "RUN", penalty: "FLAG", special: "KICK", other: "—" }[p.kind] || "—";
+    const ok = isOffense(p.kind) && p.down && p.dist != null ? success(p) : null;
+    const y = pr === "inc" ? "inc" : pr === "int" ? "int" : isOffense(p.kind) ? `${p.yards > 0 ? "+" : ""}${p.yards}` : "";
+    const dd = (p.dd || "").replace(/ at .*/, "");
+    return `<div class="srow ${ok == null ? "" : ok ? "ok" : "no"}"><span class="k ${pr && pr !== "comp" ? "k-" + pr : "k-" + p.kind}">${k}</span><span class="sdd num">${esc(dd)}</span><span class="stx">${esc(p.text)}</span><span class="sy num">${y}</span></div>`;
+  }).join("");
+  const head = s.done ? `Last series · ${esc(g[s.side].abbr)} · <span class="badge b-${s.cat}">${esc(s.label)}</span>` : `This series · ${esc(g[s.side].abbr)} ball`;
+  return `<div class="series"><div class="label">${head}</div>${rows}</div>`;
 }
 function scrubTip(g, n){
   if (n <= 0) return `<b>Before kickoff</b>`;
