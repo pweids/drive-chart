@@ -116,6 +116,8 @@ table.ts{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
 .play{border-left:4px solid transparent}
 .play.ok{border-left-color:var(--td)}
 .play.no{border-left-color:var(--to)}
+.sgap{height:12px;background:var(--bg);border-bottom:1px solid var(--line)}
+.play:has(+ .sgap){border-bottom:0}
 .legend{display:flex;gap:12px;padding:6px 10px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--line)}
 .legend i{display:inline-block;width:4px;height:12px;margin-right:5px;vertical-align:-1px}
 .play .k{grid-row:span 2;align-self:start;margin-top:2px;font-family:var(--display);font-weight:700;font-size:11px;letter-spacing:.06em;padding:1px 5px;border-radius:4px;border:1px solid currentColor;min-width:38px;text-align:center}
@@ -379,13 +381,15 @@ function buildView(g, n){
   return { n, total: g.plays.length, last, score, drives, away: team("away"), home: team("home"),
     situation: situation(g, last, lastDrive), next: g.plays[n] || null, series: seriesOf(lastDrive) };
 }
+/* A play opens a new set of downs if it is a 1st down that follows a first down earned (pure). */
+const startsSeries = (p, prev) => p.down === 1 && (!prev || prev.down !== 1 ||
+  (isOffense(prev.kind) && prev.yards >= prev.dist) || (prev.kind === "penalty" && prev.endDown === 1 && prev.down !== 1));
+const inSeriesFlow = p => p.kind !== "admin" && !/kickoff/i.test(p.typeText);
 /* Current set of downs: plays since the offense last earned a fresh 1st down (pure). */
 function seriesOf(d){
   if (!d) return null;
   const ps = d.plays.filter(p => p.kind !== "admin" && !/kickoff/i.test(p.typeText));
   if (!ps.length) return null;
-  const startsSeries = (p, prev) => p.down === 1 && (!prev || prev.down !== 1 ||
-    (isOffense(prev.kind) && prev.yards >= prev.dist) || (prev.kind === "penalty" && prev.endDown === 1 && prev.down !== 1));
   let start = 0;
   ps.forEach((p, i) => { if (startsSeries(p, ps[i-1])) start = i; });
   return { side: d.side, done: d.done, label: d.label, cat: d.cat, plays: ps.slice(start) };
@@ -716,7 +720,7 @@ function bodyHTML(g, v){
     const t = g[d.side], open = S.open.has(d.id);
     const tot = d.runs + d.passes;
     const mini = tot ? `<span class="minisplit"><i style="width:${100*d.runs/tot}%;background:var(--run)"></i><i style="width:${100*d.passes/tot}%;background:var(--pass)"></i></span>` : "";
-    const plays = open ? `<div class="plays">${boxHTML(d)}<div class="legend"><span><i style="background:var(--td)"></i>Successful</span><span><i style="background:var(--to)"></i>Unsuccessful</span></div>${d.plays.map(playHTML).join("")}</div>` : "";
+    const plays = open ? `<div class="plays">${boxHTML(d)}<div class="legend"><span><i style="background:var(--td)"></i>Successful</span><span><i style="background:var(--to)"></i>Unsuccessful</span></div>${seriesSplit(d.plays)}</div>` : "";
     return `<div class="drive ${d.done ? "" : "cur"}"><button data-act="drive" data-id="${esc(d.id)}" aria-expanded="${open}">
       <span class="who">${teamDot(t)}${esc(t.abbr)}</span>
       <span class="mid"><div class="line1 num">${d.snaps} plays · ${d.yards} yds${d.done && d.elapsed ? " · " + esc(d.elapsed) : ""}</div>
@@ -726,6 +730,14 @@ function bodyHTML(g, v){
   const log = `<section><div class="sechead"><h2>Drives</h2><span class="label">newest first · tap for plays</span></div>
     ${v.drives.length ? drives : `<p class="empty card">No plays yet at this point in the game.</p>`}</section>`;
   return stats + log;
+}
+function seriesSplit(ps){
+  let prev = null;
+  return ps.map(p => {
+    const gap = inSeriesFlow(p) && prev && startsSeries(p, prev) ? '<div class="sgap" aria-hidden="true"></div>' : "";
+    if (inSeriesFlow(p)) prev = p;
+    return gap + playHTML(p);
+  }).join("");
 }
 function boxHTML(d){
   const b = driveBox(d.plays);
