@@ -38,11 +38,13 @@ h2{font-family:var(--display);font-weight:700;font-size:20px;letter-spacing:.02e
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:10px 10px}
 .bug{display:flex;align-items:center;gap:10px}
 .back{border:1px solid var(--line);background:var(--surface-2);border-radius:8px;padding:4px 10px;font-family:var(--display);font-weight:600;letter-spacing:.04em}
-.score{display:flex;align-items:baseline;gap:8px;font-family:var(--display);font-weight:700;font-size:26px;flex:1;min-width:0}
-.score .t{display:inline-flex;align-items:center;gap:5px}
+.score{display:flex;align-items:center;gap:8px;font-family:var(--display);font-weight:700;font-size:26px;line-height:1;flex:1;min-width:0}
+.score .t{display:inline-flex;align-items:center;gap:6px}
+.score .ab{font-weight:600;font-size:20px;color:var(--muted)}
+.score .poss{width:7px;height:7px;border-radius:50%;flex:none}
+.score .poss.on{background:var(--ink)}
 .dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex:none;border:1px solid var(--line)}
 .score .sep{color:var(--muted);font-weight:500;font-size:18px}
-.poss{color:var(--muted);font-size:12px}
 .status{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
 .pill{font-family:var(--display);font-weight:700;letter-spacing:.06em;font-size:13px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);white-space:nowrap}
 .pill.live{color:var(--live);border-color:var(--live)}
@@ -657,7 +659,11 @@ function topHTML(g, v, now){
   return `<div class="top">
     <div class="bug">
       <button class="back" data-act="games" aria-label="All games">‹</button>
-      <div class="score num"><span class="t">${teamDot(g.away)}${esc(g.away.abbr)}${possSide==="away"?'<span class="poss">●</span>':""} ${v.score.away}</span><span class="sep">–</span><span class="t">${v.score.home} ${esc(g.home.abbr)}${possSide==="home"?'<span class="poss">●</span>':""}${teamDot(g.home)}</span></div>
+      <div class="score num">
+        <span class="t">${teamDot(g.away)}<span class="ab">${esc(g.away.abbr)}</span><span class="pts">${v.score.away}</span><span class="poss ${possSide==="away"?"on":""}" aria-label="${possSide==="away"?"has the ball":""}"></span></span>
+        <span class="sep">–</span>
+        <span class="t"><span class="poss ${possSide==="home"?"on":""}" aria-label="${possSide==="home"?"has the ball":""}"></span><span class="pts">${v.score.home}</span><span class="ab">${esc(g.home.abbr)}</span>${teamDot(g.home)}</span>
+      </div>
       <div class="status">${statusPill(c, now, g)}<span class="gclock num">${gclock}</span></div>
     </div>
     ${seriesHTML(g, v.series)}
