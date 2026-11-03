@@ -610,7 +610,7 @@ let S = { view: "games", board: null, boardErr: null, weekQ: "", gameId: null, g
   cursor: LIVE, open: new Set(), lastN: -1, scrub: null };
 const app = document.getElementById("app");
 const cursorKey = id => "dc.cursor." + id;
-function setCursor(c){ S.cursor = c; if (S.gameId) store.set(cursorKey(S.gameId), c); paint(true); }
+function setCursor(c){ S.scrub = null; S.cursor = c; if (S.gameId) store.set(cursorKey(S.gameId), c); paint(true); }
 
 /* ---------- render (pure string builders + one paint) ---------- */
 const teamDot = t => `<span class="dot" style="background:${esc(t.color)}"></span>`;
@@ -841,11 +841,15 @@ app.addEventListener("input", e => {
   S.scrub = +e.target.value;
   document.getElementById("scrubtip").innerHTML = scrubTip(S.game, S.scrub);
 });
-app.addEventListener("change", e => {
-  if (e.target.id !== "scrub") return;
-  const now = Date.now(), n = +e.target.value; S.scrub = null;
+// Commit the scrubber on release. "change" does not fire if the thumb ends where it started,
+// so also listen for pointer/touch release and blur; whichever comes first commits once.
+function commitScrub(e){
+  if (e.target.id !== "scrub" || S.scrub == null) return;
+  const now = Date.now(), n = +e.target.value;
+  if (n === curN(now)) { S.scrub = null; paint(true); return; }
   setCursor(cursorAtCount(S.game, S.cursor, n, now));
-});
+}
+for (const ev of ["change", "pointerup", "touchend", "focusout"]) app.addEventListener(ev, commitScrub);
 
 /* ---------- loading ---------- */
 async function refreshBoard(){
