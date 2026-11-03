@@ -395,12 +395,14 @@ function buildView(g, n){
     const third = off.filter(p => p.down === 3);
     const conv = third.filter(p => !isTurnover(p) && (p.yards >= p.dist || p.scoring)).length;
     const ds = drives.filter(d => d.side === side);
+    const series = ds.reduce((a, d) => a + seriesCount(d.plays), 0);
+    const firsts = ds.reduce((a, d) => a + driveBox(d.plays).firsts, 0);
     const done = ds.filter(d => d.done);
     const count = k => done.filter(d => d.cat === k).length;
     return { drives: ds.length, td: count("td"), fg: count("fg"), punt: count("punt"), to: count("to"), miss: count("miss"),
       runs: runs.length, runYds: runs.reduce((a,p)=>a+p.yards,0), drop: pass.length, passYds: pass.reduce((a,p)=>a+p.yards,0),
       succ, graded: graded.length, third: third.length, conv,
-      ypp: off.length ? off.reduce((a,p)=>a+p.yards,0) / off.length : null, boom: off.filter(explosive).length };
+      ypp: off.length ? off.reduce((a,p)=>a+p.yards,0) / off.length : null, boom: off.filter(explosive).length, series, firsts };
   };
   const score = last ? { away: last.away, home: last.home } : { away: 0, home: 0 };
   const lastDrive = last ? drives.find(d => d.first <= n-1 && n-1 <= Math.min(d.last, n-1) && d.plays.includes(last)) : null;
@@ -411,6 +413,12 @@ function buildView(g, n){
 const startsSeries = (p, prev) => p.down === 1 && (!prev || prev.down !== 1 ||
   (isOffense(prev.kind) && prev.yards >= prev.dist) || (prev.kind === "penalty" && prev.endDown === 1 && prev.down !== 1));
 const inSeriesFlow = p => p.kind !== "admin" && !/kickoff/i.test(p.typeText);
+/* Number of sets of downs in a drive's plays (pure). */
+function seriesCount(ps){
+  let prev = null, c = 0;
+  for (const p of ps) { if (!inSeriesFlow(p)) continue; if (startsSeries(p, prev)) c++; prev = p; }
+  return c;
+}
 /* Current set of downs: plays since the offense last earned a fresh 1st down (pure). */
 function seriesOf(d){
   if (!d) return null;
@@ -754,6 +762,7 @@ function bodyHTML(g, v){
         ${row("Yds per rush", t => avg(t.runYds, t.runs))}
         ${row("Yds per dropback", t => avg(t.passYds, t.drop))}
         ${row("Success rate", t => pct(t.succ, t.graded))}
+        ${row("1st downs / series", t => t.series ? `${t.firsts} / ${t.series}` : "–")}
         ${row("3rd down", t => t.third ? `${t.conv}/${t.third}` : "–")}
         ${row("Explosive ★", t => t.boom)}
       </tbody></table></div></section>`;
