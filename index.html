@@ -321,7 +321,7 @@ function parseSummary(j){
     (d.plays || []).forEach(p => {
       const kind = classify(p);
       plays.push({
-        id: String(p.id ?? plays.length), drive: di, side, kind,
+        id: String(p.id ?? plays.length), drive: di, side, kind, offAbbr: (side === "home" ? home : away).abbr,
         typeText: p.type?.text || "", text: p.text || "",
         period: p.period?.number || 1, clock: p.clock?.displayValue || "",
         clockSec: clockSec(p.clock?.displayValue),
@@ -763,8 +763,18 @@ function bodyHTML(g, v){
 }
 // Band that opens a set of downs: yards the offense has traveled from its own goal line
 // (own 28 -> 28, opponent's 40 -> 60), i.e. 100 minus yards to the end zone.
+function ownYardLine(p){
+  // Read the spot from the down text ("1st & 10 at CHI 28"): own side -> 28, opponent's 40 -> 60.
+  const m = /\bat\s+(?:([A-Z]{2,4})\s+)?(\d{1,2})\b/.exec(p.dd || "");
+  if (m) {
+    const n = +m[2];
+    if (!m[1] || n === 50) return n;
+    return m[1] === p.offAbbr ? n : 100 - n;
+  }
+  return Number.isFinite(p.ytg) ? 100 - p.ytg : null;
+}
 function seriesBand(p){
-  const y = Number.isFinite(+p.ytg) && p.ytg !== null && p.ytg !== "" ? 100 - p.ytg : null;
+  const y = ownYardLine(p);
   return `<div class="sgap" aria-label="${y == null ? "New set of downs" : "1st down at the " + y}"><span class="num">${y == null ? "" : y}</span></div>`;
 }
 function seriesSplit(ps){
