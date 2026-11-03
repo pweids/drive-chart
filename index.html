@@ -104,7 +104,9 @@ table.ts{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
 .play{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;padding:8px 10px;border-bottom:1px solid var(--line)}
 .play:last-child{border-bottom:0}
 .play .k{grid-row:span 2;align-self:start;margin-top:2px;font-family:var(--display);font-weight:700;font-size:11px;letter-spacing:.06em;padding:1px 5px;border-radius:4px;border:1px solid currentColor;min-width:38px;text-align:center}
-.k-run{color:var(--run)}.k-pass{color:var(--pass)}.k-special,.k-penalty,.k-other,.k-admin{color:var(--muted)}
+.k-run{color:var(--run)}.k-pass{color:var(--pass)}
+.k-inc{color:var(--muted);border-style:dashed!important}.k-int,.k-sack{color:var(--to)}.k-scramble{color:var(--pass)}
+.play.inc .id .y{color:var(--muted);font-weight:500}.k-special,.k-penalty,.k-other,.k-admin{color:var(--muted)}
 .play .id{font-family:var(--display);font-weight:600;font-size:14px}
 .play .id .y{float:right;font-variant-numeric:tabular-nums}
 .play .tx{font-size:13px;color:var(--muted)}
@@ -693,10 +695,22 @@ function boxHTML(d){
     ${cell("Sacks", b.sacks, b.sacks ? `${b.sackYds} yds` : (b.scr ? `${b.scr} scramble${b.scr > 1 ? "s" : ""}` : ""))}
   </div>`;
 }
+// Pass outcome: incomplete, intercepted, sacked, scramble, or complete (pure).
+function passResult(p){
+  if (p.kind !== "pass") return null;
+  if (/interception/i.test(p.typeText)) return "int";
+  if (/sack/i.test(p.typeText)) return "sack";
+  if (/scrambles/i.test(p.text)) return "scramble";
+  if (/incomplet/i.test(p.typeText) || /pass incomplete/i.test(p.text)) return "inc";
+  return "comp";
+}
 function playHTML(p){
-  const k = { run: "RUN", pass: "PASS", penalty: "FLAG", special: "KICK", admin: "—", other: "—" }[p.kind];
-  const y = isOffense(p.kind) ? `${p.yards > 0 ? "+" : ""}${p.yards}` : "";
-  return `<div class="play ${p.scoring ? "sc" : ""}"><span class="k k-${p.kind}">${k}</span>
+  const pr = passResult(p);
+  const k = pr ? { int: "INT", sack: "SACK", scramble: "SCRM", inc: "INC", comp: "PASS" }[pr]
+    : { run: "RUN", penalty: "FLAG", special: "KICK", admin: "—", other: "—" }[p.kind];
+  const y = pr === "inc" ? "inc" : pr === "int" ? "int" : isOffense(p.kind) ? `${p.yards > 0 ? "+" : ""}${p.yards}` : "";
+  const cls = pr && pr !== "comp" ? `k-${pr}` : `k-${p.kind}`;
+  return `<div class="play ${p.scoring ? "sc" : ""} ${pr === "inc" ? "inc" : ""}"><span class="k ${cls}">${k}</span>
     <div class="id num">${playId(p)}<span class="y">${y}</span></div>
     <div class="tx">${esc(p.text)}</div></div>`;
 }
