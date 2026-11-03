@@ -50,6 +50,7 @@ h2{font-family:var(--display);font-weight:700;font-size:20px;letter-spacing:.02e
 .pill.live{color:var(--live);border-color:var(--live)}
 .pill.paused{background:var(--surface-2)}
 .pill.delay{color:var(--accent);border-color:var(--accent)}
+.fresh{font-size:11px;color:var(--muted)}
 .gclock{font-family:var(--display);font-weight:600;font-size:15px;color:var(--muted)}
 
 /* transport */
@@ -612,7 +613,9 @@ const baseUrl = () => store.get("dc.base", ESPN) || ESPN;
 async function getJSON(path){
   const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 10000);
   try {
-    const r = await fetch(baseUrl().replace(/\/$/, "") + path, { signal: ctl.signal });
+    // Bust caches: Safari and ESPN's CDN otherwise hand back the same response for minutes.
+    const url = baseUrl().replace(/\/$/, "") + path + (path.includes("?") ? "&" : "?") + "_=" + Date.now();
+    const r = await fetch(url, { signal: ctl.signal, cache: "no-store" });
     if (!r.ok) throw new Error(`Feed returned ${r.status}`);
     return await r.json();
   } finally { clearTimeout(t); }
@@ -684,7 +687,7 @@ function topHTML(g, v, now){
         <span class="sep">–</span>
         <span class="t"><span class="poss ${possSide==="home"?"on":""}" aria-label="${possSide==="home"?"has the ball":""}"></span><span class="pts">${v.score.home}</span><span class="ab">${esc(g.home.abbr)}</span>${teamDot(g.home)}</span>
       </div>
-      <div class="status">${statusPill(c, now, g)}<span class="gclock num">${gclock}</span></div>
+      <div class="status">${statusPill(c, now, g)}<span class="gclock num">${gclock}</span>${g.state !== "post" && S.fetchedAt ? `<span class="fresh num">updated ${fmtDur(now - S.fetchedAt)} ago</span>` : ""}</div>
     </div>
     ${seriesHTML(g, v.series)}
     <div class="next"><div class="what"><div class="label">Next snap</div>${nextLine}</div></div>
@@ -917,7 +920,7 @@ async function refreshGame(first){
     const j = await loadGame(id);
     if (S.gameId !== id) return;
     const g = parseSummary(j);
-    S.game = g; S.gameErr = null;
+    S.game = g; S.gameErr = null; S.fetchedAt = Date.now();
     if (first) {
       const saved = store.get(cursorKey(id), null);
       S.cursor = saved && (saved.live || Number.isFinite(saved.T)) ? saved
@@ -939,7 +942,13 @@ document.getElementById("saveBase").addEventListener("click", () => {
 
 /* ---------- clocks ---------- */
 setInterval(() => { if (S.view === "game" && S.game && S.scrub == null) paint(false); }, 1000);
-setInterval(() => { if (S.view === "game" && S.game?.state === "in") refreshGame(false); }, 20000);
+// Poll every 15 s until the game is final. Phones pause timers in the background,
+// so also refresh as soon as the page becomes visible again.
+setInterval(() => { if (S.view === "game" && S.game && S.game.state !== "post" && !document.hidden) refreshGame(false); }, 15000);
+const wake = () => { if (document.hidden) return; if (S.view === "game" && S.gameId) refreshGame(false); else if (S.view === "games") refreshBoard(); };
+document.addEventListener("visibilitychange", wake);
+window.addEventListener("pageshow", wake);
+window.addEventListener("focus", wake);
 
 /* ---------- boot ---------- */
 (function boot(){
