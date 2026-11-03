@@ -63,6 +63,7 @@ h2{font-family:var(--display);font-weight:700;font-size:20px;letter-spacing:.02e
 .srow .k{font-family:var(--display);font-weight:700;font-size:11px;letter-spacing:.06em;padding:0 4px;border-radius:4px;border:1px solid currentColor;min-width:38px;text-align:center}
 .srow .sdd{font-family:var(--display);font-weight:600;font-size:14px;white-space:nowrap}
 .srow .stx{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.star{color:var(--miss);margin-right:3px;font-size:12px}
 .srow .sy{font-family:var(--display);font-weight:600;font-size:14px;text-align:right;min-width:28px}
 .btns{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-top:8px}
 .tb{border:1px solid var(--line);background:var(--surface);border-radius:10px;min-height:44px;padding:4px 2px;font-family:var(--display);font-weight:600;font-size:14px;letter-spacing:.03em;line-height:1.05}
@@ -371,7 +372,7 @@ function buildView(g, n){
     return { drives: ds.length, td: count("td"), fg: count("fg"), punt: count("punt"), to: count("to"), miss: count("miss"),
       runs: runs.length, runYds: runs.reduce((a,p)=>a+p.yards,0), drop: pass.length, passYds: pass.reduce((a,p)=>a+p.yards,0),
       succ, graded: graded.length, third: third.length, conv,
-      ypp: off.length ? off.reduce((a,p)=>a+p.yards,0) / off.length : null };
+      ypp: off.length ? off.reduce((a,p)=>a+p.yards,0) / off.length : null, boom: off.filter(explosive).length };
   };
   const score = last ? { away: last.away, home: last.home } : { away: 0, home: 0 };
   const lastDrive = last ? drives.find(d => d.first <= n-1 && n-1 <= Math.min(d.last, n-1) && d.plays.includes(last)) : null;
@@ -388,6 +389,12 @@ function seriesOf(d){
   let start = 0;
   ps.forEach((p, i) => { if (startsSeries(p, ps[i-1])) start = i; });
   return { side: d.side, done: d.done, label: d.label, cat: d.cat, plays: ps.slice(start) };
+}
+/* Explosive: a run of 10+ yards or a pass of 20+ (scrambles count as runs here). */
+function explosive(p){
+  if (!isOffense(p.kind) || isTurnover(p)) return false;
+  const runLike = p.kind === "run" || /scrambles/i.test(p.text);
+  return p.yards >= (runLike ? 10 : 20);
 }
 function success(p){
   if (isTurnover(p)) return false;
@@ -672,7 +679,7 @@ function seriesHTML(g, s){
     const k = pr ? { int: "INT", sack: "SACK", scramble: "SCRM", inc: "INC", comp: "PASS" }[pr]
       : { run: "RUN", penalty: "FLAG", special: "KICK", other: "—" }[p.kind] || "—";
     const ok = isOffense(p.kind) && p.down && p.dist != null ? success(p) : null;
-    const y = pr === "inc" ? "inc" : pr === "int" ? "int" : isOffense(p.kind) ? `${p.yards > 0 ? "+" : ""}${p.yards}` : "";
+    const y = (explosive(p) ? '<span class="star" title="Explosive play">★</span>' : "") + (pr === "inc" ? "inc" : pr === "int" ? "int" : isOffense(p.kind) ? `${p.yards > 0 ? "+" : ""}${p.yards}` : "");
     const dd = (p.dd || "").replace(/ at .*/, "");
     return `<div class="srow ${ok == null ? "" : ok ? "ok" : "no"}"><span class="k ${pr && pr !== "comp" ? "k-" + pr : "k-" + p.kind}">${k}</span><span class="sdd num">${esc(dd)}</span><span class="stx">${esc(p.text)}</span><span class="sy num">${y}</span></div>`;
   }).join("");
@@ -703,6 +710,7 @@ function bodyHTML(g, v){
         ${row("Yds per dropback", t => avg(t.passYds, t.drop))}
         ${row("Success rate", t => pct(t.succ, t.graded))}
         ${row("3rd down", t => t.third ? `${t.conv}/${t.third}` : "–")}
+        ${row("Explosive ★", t => t.boom)}
       </tbody></table></div></section>`;
   const drives = v.drives.slice().reverse().map(d => {
     const t = g[d.side], open = S.open.has(d.id);
@@ -744,7 +752,7 @@ function playHTML(p){
   const pr = passResult(p);
   const k = pr ? { int: "INT", sack: "SACK", scramble: "SCRM", inc: "INC", comp: "PASS" }[pr]
     : { run: "RUN", penalty: "FLAG", special: "KICK", admin: "—", other: "—" }[p.kind];
-  const y = pr === "inc" ? "inc" : pr === "int" ? "int" : isOffense(p.kind) ? `${p.yards > 0 ? "+" : ""}${p.yards}` : "";
+  const y = (explosive(p) ? '<span class="star" title="Explosive play">★</span>' : "") + (pr === "inc" ? "inc" : pr === "int" ? "int" : isOffense(p.kind) ? `${p.yards > 0 ? "+" : ""}${p.yards}` : "");
   const cls = pr && pr !== "comp" ? `k-${pr}` : `k-${p.kind}`;
   const ok = isOffense(p.kind) && p.down && p.dist != null ? success(p) : null;
   const mark = ok == null ? "" : ok ? "ok" : "no";
