@@ -135,7 +135,9 @@ table.ts{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
 .play{border-left:4px solid transparent}
 .play.ok{border-left-color:var(--td)}
 .play.no{border-left-color:var(--to)}
-.sgap{background:var(--bg);border-bottom:1px solid var(--line);padding:4px 10px 2px;min-height:12px;text-align:center;font-family:var(--display);font-weight:700;font-size:24px;line-height:1.1;color:var(--muted)}
+.sgap{background:var(--bg);border-bottom:1px solid var(--line);padding:4px 10px 2px;min-height:12px;display:flex;justify-content:center;align-items:baseline;gap:6px;font-family:var(--display);font-weight:700;font-size:24px;line-height:1.1;color:var(--muted)}
+.sgap .half{font-size:12px;letter-spacing:.08em;padding:1px 5px;border-radius:4px;border:1px solid currentColor;transform:translateY(-3px)}
+.sgap.opp{color:var(--ink)}
 .play:has(+ .sgap){border-bottom:0}
 .legend{display:flex;gap:12px;padding:6px 10px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--line)}
 .legend i{display:inline-block;width:4px;height:12px;margin-right:5px;vertical-align:-1px}
@@ -666,13 +668,22 @@ function playId(p){ // what the TV score bug shows before the snap
   const dd = p.kind === "admin" ? "" : p.dd;
   return `${qLabel(p.period)} ${esc(p.clock)}${dd ? " · " + esc(dd) : ""}`;
 }
+// At the live edge the next play isn't in the feed yet; derive it from where the last play ended.
+function upcomingHTML(g, v){
+  const s = v.situation, last = v.last;
+  const head = s.kind === "snap" && s.text ? esc(s.text) : s.kind === "snap" ? "Next snap" : esc(s.text);
+  const who = s.kind === "snap" ? `${esc(g[s.side].abbr)} ball · ` : "";
+  const when = last ? `after ${qLabel(last.period)} ${esc(last.clock)} play · ` : "";
+  return `<div class="dd">${head}</div><div class="sub num">${who}${when}waiting for the snap</div>`;
+}
 function topHTML(g, v, now){
   const c = S.cursor, last = v.last;
   const gclock = last ? `${qLabel(last.period)} ${esc(last.clock)}` : "Pregame";
   const possSide = v.situation.kind === "snap" ? v.situation.side : null;
   const nx = v.next;
   const nextLine = nx ? `<div class="dd">${esc(nx.dd || nx.typeText)}</div><div class="sub num">${qLabel(nx.period)} ${esc(nx.clock)} · ${esc(g[nx.side].abbr)} ball · play ${v.n + 1} of ${v.total}</div>`
-    : `<div class="dd">${g.state === "post" ? "End of game" : "Waiting for the next play"}</div><div class="sub">${v.total} plays so far</div>`;
+    : g.state === "post" ? `<div class="dd">End of game</div><div class="sub">${v.total} plays</div>`
+    : upcomingHTML(g, v);
   const disPrev = v.n === 0 ? "disabled" : "", disNext = v.n >= v.total ? "disabled" : "";
   return `<div class="top">
     <div class="bug">
@@ -761,7 +772,7 @@ function bodyHTML(g, v){
     ${v.drives.length ? drives : `<p class="empty card">No plays yet at this point in the game.</p>`}</section>`;
   return stats + log;
 }
-// Band that opens a set of downs: yards to go to the end zone.
+// Band that opens a set of downs.
 function ownYardLine(p){
   // Read the spot from the down text ("1st & 10 at CHI 28"): own side -> 28, opponent's 40 -> 60.
   const m = /\bat\s+(?:([A-Z]{2,4})\s+)?(\d{1,2})\b/.exec(p.dd || "");
@@ -773,9 +784,11 @@ function ownYardLine(p){
   return Number.isFinite(p.ytg) ? 100 - p.ytg : null;
 }
 function seriesBand(p){
-  // Yards still to go to the end zone being attacked: CHI ball at CHI 28 -> 72, at SEA 31 -> 31.
-  const own = ownYardLine(p), y = own == null ? null : 100 - own;
-  return `<div class="sgap" aria-label="${y == null ? "New set of downs" : y + " yards to the end zone"}"><span class="num">${y == null ? "" : y}</span></div>`;
+  // Yard line as the TV shows it (1-50), tagged with whose half: CHI ball at CHI 28 -> OWN 28, at SEA 31 -> OPP 31.
+  const own = ownYardLine(p);
+  if (own == null) return `<div class="sgap" aria-label="New set of downs"></div>`;
+  const side = own === 50 ? "" : own < 50 ? "own" : "opp", y = own > 50 ? 100 - own : own;
+  return `<div class="sgap ${side}" aria-label="1st down at ${side ? side + " " : ""}${y}">${side ? `<span class="half">${side.toUpperCase()}</span>` : ""}<span class="num">${y}</span></div>`;
 }
 function seriesSplit(ps){
   let prev = null;
