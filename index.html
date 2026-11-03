@@ -371,12 +371,15 @@ function settle(c, now){ // a running cursor that catches real time becomes live
 function buildView(g, n){
   const shown = g.plays.slice(0, n);
   const last = shown[n-1];
-  const drives = g.drives.filter(d => d.last >= d.first && d.first < n).map(d => {
+  const teamNo = {};
+  const drives = g.drives.filter(d => d.last >= d.first && d.first < n).map((d, i) => {
+    teamNo[d.side] = (teamNo[d.side] || 0) + 1;
+    const no = teamNo[d.side], gameNo = i + 1;
     const ps = g.plays.slice(d.first, Math.min(d.last + 1, n));
     const done = d.last < n && !d.isCurrent;
     const off = ps.filter(p => isOffense(p.kind));
     const runs = off.filter(p => p.kind === "run").length;
-    return { ...d, plays: ps, done, snaps: off.length, runs, passes: off.length - runs,
+    return { ...d, no, gameNo, plays: ps, done, snaps: off.length, runs, passes: off.length - runs,
       yards: off.reduce((a, p) => a + p.yards, 0), cat: done ? cat(d.short || d.result) : "live",
       label: done ? (d.short || d.result || "END").toUpperCase() : "ON FIELD" };
   });
@@ -411,7 +414,7 @@ function seriesOf(d){
   if (!ps.length) return null;
   let start = 0;
   ps.forEach((p, i) => { if (startsSeries(p, ps[i-1])) start = i; });
-  return { side: d.side, done: d.done, label: d.label, cat: d.cat, plays: ps.slice(start) };
+  return { side: d.side, no: d.no, gameNo: d.gameNo, done: d.done, label: d.label, cat: d.cat, plays: ps.slice(start) };
 }
 /* Explosive: a run of 10+ yards or a pass of 20+ (scrambles count as runs here). */
 function explosive(p){
@@ -706,7 +709,8 @@ function seriesHTML(g, s){
     const dd = (p.dd || "").replace(/ at .*/, "");
     return `<div class="srow ${ok == null ? "" : ok ? "ok" : "no"}"><span class="k ${pr && pr !== "comp" ? "k-" + pr : "k-" + p.kind}">${k}</span><span class="sdd num">${esc(dd)}</span><span class="stx">${esc(p.text)}</span><span class="sy num">${y}</span></div>`;
   }).join("");
-  const head = s.done ? `Last series · ${esc(g[s.side].abbr)} · <span class="badge b-${s.cat}">${esc(s.label)}</span>` : `This series · ${esc(g[s.side].abbr)} ball`;
+  const which = `${esc(g[s.side].abbr)} drive ${s.no} <span style="font-weight:500">(game drive ${s.gameNo})</span>`;
+  const head = s.done ? `Last series · ${which} · <span class="badge b-${s.cat}">${esc(s.label)}</span>` : `This series · ${which}`;
   return `<div class="series"><div class="label">${head}</div>${rows}</div>`;
 }
 function scrubTip(g, n){
