@@ -135,7 +135,7 @@ table.ts{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
 .play{border-left:4px solid transparent}
 .play.ok{border-left-color:var(--td)}
 .play.no{border-left-color:var(--to)}
-.sgap{background:var(--bg);border-bottom:1px solid var(--line);padding:5px 10px 3px 8px;font-family:var(--display);font-weight:600;font-size:13px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+.sgap{background:var(--bg);border-bottom:1px solid var(--line);padding:4px 10px 2px;min-height:12px;text-align:center;font-family:var(--display);font-weight:700;font-size:24px;line-height:1.1;color:var(--muted)}
 .play:has(+ .sgap){border-bottom:0}
 .legend{display:flex;gap:12px;padding:6px 10px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--line)}
 .legend i{display:inline-block;width:4px;height:12px;margin-right:5px;vertical-align:-1px}
@@ -761,11 +761,11 @@ function bodyHTML(g, v){
     ${v.drives.length ? drives : `<p class="empty card">No plays yet at this point in the game.</p>`}</section>`;
   return stats + log;
 }
-// Band that opens a set of downs: where the 1st down was snapped from.
+// Band that opens a set of downs: yards the offense has traveled from its own goal line
+// (own 28 -> 28, opponent's 40 -> 60), i.e. 100 minus yards to the end zone.
 function seriesBand(p){
-  const spot = (p.dd.split(" at ")[1] || "").trim();
-  const dist = /&\s*goal/i.test(p.dd) ? "Goal" : p.dist;
-  return `<div class="sgap"><span class="num">1st &amp; ${esc(dist)}${spot ? " · " + esc(spot) : ""}</span></div>`;
+  const y = Number.isFinite(+p.ytg) && p.ytg !== null && p.ytg !== "" ? 100 - p.ytg : null;
+  return `<div class="sgap" aria-label="${y == null ? "New set of downs" : "1st down at the " + y}"><span class="num">${y == null ? "" : y}</span></div>`;
 }
 function seriesSplit(ps){
   let prev = null;
