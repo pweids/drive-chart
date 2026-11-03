@@ -671,7 +671,12 @@ function gamesHTML(){
 }
 
 function statusPill(c, now, g){
-  if (c.live) return g.state === "post" ? `<span class="pill paused">FINAL</span>` : `<span class="pill live">LIVE</span>`;
+  // A finished game has no "live" to be behind, so a wall-clock delay means nothing there.
+  if (g.state === "post") {
+    if (c.live) return `<span class="pill paused">FINAL</span>`;
+    return c.running ? `<span class="pill delay">REPLAY</span>` : `<span class="pill paused">PAUSED</span>`;
+  }
+  if (c.live) return `<span class="pill live">LIVE</span>`;
   const behind = now - vtime(c, now);
   if (!c.running) return `<span class="pill paused">PAUSED</span>`;
   return `<span class="pill delay">−${fmtDur(behind)}</span>`;
@@ -714,7 +719,7 @@ function topHTML(g, v, now){
       <button class="tb" data-act="prev" ${disPrev}>‹<small>Play</small></button>
       <button class="tb big" data-act="next" ${disNext}>Next play<small>reveal 1</small></button>
       <button class="tb" data-act="nextDrive" ${disNext}>››<small>Drive</small></button>
-      <button class="tb ${c.live ? "on" : ""}" data-act="live">${g.state === "post" ? "End" : "Live"}<small>${c.live ? (g.state === "post" ? "all plays" : "watching") : "go live"}</small></button>
+      <button class="tb ${c.live ? "on" : ""}" data-act="live">${g.state === "post" ? "End" : "Live"}<small>${c.live ? (g.state === "post" ? "all plays" : "watching") : g.state === "post" ? "show all" : "go live"}</small></button>
     </div>
     <div class="scrub">
       <input id="scrub" type="range" min="0" max="${v.total}" step="1" value="${S.scrub ?? v.n}" aria-label="Plays revealed">
@@ -862,6 +867,8 @@ function paint(force){
     return;
   }
   S.cursor = settle(S.cursor, now);
+  // Reaching the last play of a finished game ends the replay: treat it as the full game.
+  if (g.state === "post" && !S.cursor.live && revealed(g, vtime(S.cursor, now)) >= g.plays.length) S.cursor = LIVE;
   const n = revealed(g, vtime(S.cursor, now));
   const v = buildView(g, n);
   const top = topHTML(g, v, now);
