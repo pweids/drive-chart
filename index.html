@@ -1,0 +1,824 @@
+<title>Drive Chart</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&display=swap">
+<style>
+/* Layout: one phone column, sticky scoreboard + transport bar, drive log as a ledger, guide at the bottom. */
+:root{
+  --bg:#eef2ef; --surface:#ffffff; --surface-2:#f6f8f6; --ink:#16201a; --muted:#5a6a61; --line:#d5ddd7;
+  --accent:#3d6280; --accent-ink:#ffffff;
+  --td:#24804a; --fg:#2a64a4; --to:#b8382b; --punt:#7b8780; --miss:#9a6a10; --live:#c0392b;
+  --run:#8a6a3a; --pass:#2f7d8e;
+  --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"Source Sans 3",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e1411; --surface:#161e19; --surface-2:#1c2620; --ink:#e4ebe6; --muted:#93a39a; --line:#2a362f;
+  --accent:#93b6d2; --accent-ink:#0e1411;
+  --td:#4cc277; --fg:#6ea9ea; --to:#f06a5a; --punt:#8f9b94; --miss:#e0a63a; --live:#ff6b5b;
+  --run:#c9a066; --pass:#5bb6c9; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e1411; --surface:#161e19; --surface-2:#1c2620; --ink:#e4ebe6; --muted:#93a39a; --line:#2a362f;
+  --accent:#93b6d2; --accent-ink:#0e1411;
+  --td:#4cc277; --fg:#6ea9ea; --to:#f06a5a; --punt:#8f9b94; --miss:#e0a63a; --live:#ff6b5b;
+  --run:#c9a066; --pass:#5bb6c9; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.4;margin:0}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+.wrap{max-width:560px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 32px}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+.label{font-family:var(--display);font-weight:600;letter-spacing:.06em;text-transform:uppercase;font-size:12px;color:var(--muted)}
+h2{font-family:var(--display);font-weight:700;font-size:20px;letter-spacing:.02em;margin:0;text-wrap:balance}
+
+/* top bar */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line);
+  margin:0 calc(-1 * max(16px,env(safe-area-inset-left,0px))) 0 calc(-1 * max(16px,env(safe-area-inset-right,0px)));
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:10px 10px}
+.bug{display:flex;align-items:center;gap:10px}
+.back{border:1px solid var(--line);background:var(--surface-2);border-radius:8px;padding:4px 10px;font-family:var(--display);font-weight:600;letter-spacing:.04em}
+.score{display:flex;align-items:baseline;gap:8px;font-family:var(--display);font-weight:700;font-size:26px;flex:1;min-width:0}
+.score .t{display:inline-flex;align-items:center;gap:5px}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex:none;border:1px solid var(--line)}
+.score .sep{color:var(--muted);font-weight:500;font-size:18px}
+.poss{color:var(--muted);font-size:12px}
+.status{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.pill{font-family:var(--display);font-weight:700;letter-spacing:.06em;font-size:13px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);white-space:nowrap}
+.pill.live{color:var(--live);border-color:var(--live)}
+.pill.paused{background:var(--surface-2)}
+.pill.delay{color:var(--accent);border-color:var(--accent)}
+.gclock{font-family:var(--display);font-weight:600;font-size:15px;color:var(--muted)}
+
+/* transport */
+.next{margin-top:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);padding:8px 10px;display:flex;gap:10px;align-items:center}
+.next .what{flex:1;min-width:0}
+.next .dd{font-family:var(--display);font-weight:700;font-size:20px;line-height:1.1}
+.next .sub{font-size:13px;color:var(--muted)}
+.btns{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-top:8px}
+.tb{border:1px solid var(--line);background:var(--surface);border-radius:10px;min-height:44px;padding:4px 2px;font-family:var(--display);font-weight:600;font-size:14px;letter-spacing:.03em;line-height:1.05}
+.tb small{display:block;font-size:11px;color:var(--muted);font-weight:500}
+.tb.big{grid-column:span 2;border:1.5px solid var(--ink);font-size:18px;font-weight:700}
+.tb.on{color:var(--live);border-color:var(--live)}
+.tb.on small{color:var(--live)}
+.tb:disabled{opacity:.4;cursor:default}
+.scrub{margin-top:10px}
+.scrub input{width:100%;accent-color:var(--accent);height:28px;margin:0}
+.scrub .ticks{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);font-family:var(--display);letter-spacing:.05em}
+.scrubtip{font-size:13px;color:var(--muted);min-height:18px}
+.scrubtip b{color:var(--ink);font-weight:600}
+
+/* sections */
+section{margin-top:18px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px}
+.sechead{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;gap:8px}
+.watch ul{margin:6px 0 0;padding-left:18px}
+.watch li{margin:4px 0}
+.watch .sit{font-family:var(--display);font-weight:600;font-size:16px}
+
+table.ts{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+.ts th,.ts td{padding:6px 4px;border-bottom:1px solid var(--line);text-align:right}
+.ts th:first-child,.ts td:first-child{text-align:left;color:var(--muted);font-weight:400}
+.ts thead th{font-family:var(--display);font-weight:700;font-size:16px;color:var(--ink)}
+.ts tr:last-child td{border-bottom:0}
+.split{display:flex;height:6px;border-radius:3px;overflow:hidden;background:var(--line);margin-top:3px;margin-left:auto;max-width:90px}
+.split i{display:block;height:100%}
+.res-row{display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap}
+
+.drive{border:1px solid var(--line);border-radius:10px;background:var(--surface);margin-top:6px;overflow:hidden}
+.drive>button{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;width:100%;text-align:left;background:none;border:0;padding:9px 10px}
+.drive .who{font-family:var(--display);font-weight:700;font-size:17px;display:flex;align-items:center;gap:5px;min-width:52px}
+.drive .mid{min-width:0}
+.drive .line1{font-size:14px}
+.drive .line2{font-size:12px;color:var(--muted);display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.minisplit{display:inline-flex;height:6px;width:40px;border-radius:3px;overflow:hidden;background:var(--line)}
+.minisplit i{display:block;height:100%}
+.badge{font-family:var(--display);font-weight:600;font-size:13px;letter-spacing:.05em;padding:1px 6px;border-radius:5px;border:1px solid currentColor;white-space:nowrap;background:transparent}
+.b-td{color:var(--td)}.b-fg{color:var(--fg)}.b-to{color:var(--to)}.b-punt,.b-end{color:var(--punt)}.b-miss{color:var(--miss)}
+.b-live{color:var(--accent)}
+.drive.cur{border-color:var(--muted)}
+.plays{border-top:1px solid var(--line);background:var(--surface-2)}
+.box{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 8px;padding:10px;border-bottom:1px solid var(--line)}
+.box .bv{font-family:var(--display);font-weight:700;font-size:19px;line-height:1.15}
+.box .bs{font-size:12px;color:var(--muted)}
+.play{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;padding:8px 10px;border-bottom:1px solid var(--line)}
+.play:last-child{border-bottom:0}
+.play .k{grid-row:span 2;align-self:start;margin-top:2px;font-family:var(--display);font-weight:700;font-size:11px;letter-spacing:.06em;padding:1px 5px;border-radius:4px;border:1px solid currentColor;min-width:38px;text-align:center}
+.k-run{color:var(--run)}.k-pass{color:var(--pass)}.k-special,.k-penalty,.k-other,.k-admin{color:var(--muted)}
+.play .id{font-family:var(--display);font-weight:600;font-size:14px}
+.play .id .y{float:right;font-variant-numeric:tabular-nums}
+.play .tx{font-size:13px;color:var(--muted)}
+.play.sc .id{color:var(--td)}
+.empty{color:var(--muted);text-align:center;padding:16px 8px}
+
+/* games */
+.games{display:grid;gap:6px}
+.game{display:flex;align-items:center;gap:10px;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:10px 12px;text-align:left;width:100%}
+.game .m{flex:1;font-family:var(--display);font-weight:700;font-size:19px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.game .when{font-size:13px;color:var(--muted)}
+.chip{font-family:var(--display);font-weight:600;font-size:12px;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+.chip.in{color:var(--live);border-color:var(--live)}
+.weekbar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:14px 0 8px}
+.note{font-size:13px;color:var(--muted);border:1px dashed var(--line);border-radius:10px;padding:10px 12px;margin-top:10px}
+.note.err{border-color:var(--to);color:var(--ink)}
+.demo-flag{display:inline-block;margin-top:6px;font-size:12px;color:var(--muted);font-family:var(--display);letter-spacing:.05em;font-weight:600}
+
+details{background:var(--surface);border:1px solid var(--line);border-radius:12px;margin-top:8px}
+details>summary{padding:11px 12px;font-family:var(--display);font-weight:700;font-size:17px;cursor:pointer;list-style:none;display:flex;justify-content:space-between}
+details>summary::after{content:"+";color:var(--muted)}
+details[open]>summary::after{content:"−"}
+details .in{padding:0 12px 12px}
+details .in p,details .in li{max-width:65ch}
+details .in ul{padding-left:18px;margin:6px 0}
+details .in li{margin:5px 0}
+details h3{font-family:var(--display);font-size:15px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:12px 0 2px}
+.jump{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.jump select,.jump input{font:inherit;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;padding:6px 8px;min-height:40px}
+.jump input{width:84px}
+.jump button{border:1px solid var(--line);background:var(--surface-2);color:var(--ink);border-radius:8px;padding:6px 12px;min-height:40px;font-family:var(--display);font-weight:700}
+.settings input{width:100%;font:inherit;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;padding:8px}
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="wrap">
+  <div id="app"></div>
+
+  <section id="guide">
+    <div class="sechead"><h2>Reading a play</h2><span class="label">Guide</span></div>
+    <details>
+      <summary>Before the snap</summary>
+      <div class="in"><ul>
+        <li><b>Personnel.</b> Count running backs and tight ends. "11" means 1 RB, 1 TE, so 3 WRs. "12", "21" and "13" are heavier groupings that lean toward runs and play-action.</li>
+        <li><b>QB alignment.</b> Under center leans run or play-action. Shotgun leans pass, though many teams run plenty from it.</li>
+        <li><b>Safeties.</b> One deep in the middle ("single-high") usually means Cover 1 (man) or Cover 3. Two deep ("two-high") usually means Cover 2 or Cover 4. Two-high leaves fewer defenders near the line, which invites runs.</li>
+        <li><b>Box count.</b> Count defenders within about 5 yards of the ball. If they outnumber the blockers, the run is hard.</li>
+        <li><b>Motion.</b> If a defender runs across the field with the motion man, the defense is probably in man coverage. If the defenders just shift over, it is probably zone.</li>
+      </ul></div>
+    </details>
+    <details>
+      <summary>At the snap</summary>
+      <div class="in"><ul>
+        <li><b>Watch the offensive line for the first second, not the ball.</b> Linemen firing forward means run. Linemen stepping back means pass. Linemen stepping back while the QB fakes a handoff means play-action.</li>
+        <li><b>Run scheme.</b> If all five linemen step the same direction in unison, it is a zone run. If a guard pulls across behind the line, it is a gap or power run, and the back follows the puller.</li>
+        <li><b>Rushers.</b> Count them. Five or more is a blitz, which usually means man coverage behind it and a quicker throw.</li>
+      </ul></div>
+    </details>
+    <details>
+      <summary>After the play</summary>
+      <div class="in"><ul>
+        <li><b>Where did the ball end up relative to the sticks?</b> On 3rd down, a completion short of the line to gain is still a failed down.</li>
+        <li><b>Who won the rep?</b> On a sack, find the blocker who got beat. On a long run, find the hole and the block that opened it.</li>
+        <li><b>On replays,</b> broadcasts often show the end-zone or high wide angle. Use it to check the safeties and the line, since the live camera follows the ball.</li>
+      </ul></div>
+    </details>
+    <details>
+      <summary>The numbers here</summary>
+      <div class="in"><ul>
+        <li><b>Success rate.</b> A play succeeds if it gains 40% of the needed yards on 1st down, 60% on 2nd, and all of them on 3rd or 4th. One 60-yard run can inflate yards per play; success rate counts each down equally.</li>
+        <li><b>Dropbacks</b> are pass attempts, sacks, and QB scrambles. ESPN logs scrambles as runs, so this page reclassifies them as pass plays.</li>
+        <li><b>Kneel-downs, spikes, kickoffs, punts and kicks</b> are left out of run/pass counts.</li>
+      </ul></div>
+    </details>
+  </section>
+
+  <section>
+    <details class="settings">
+      <summary>Data source</summary>
+      <div class="in">
+        <p class="note" style="margin-top:0">This page reads ESPN's public game feed. If the feed is blocked where this page is hosted, enter the address of a small relay (for example a Cloudflare Worker that forwards to site.api.espn.com).</p>
+        <label class="label" for="base">Feed address</label>
+        <input id="base" type="url" inputmode="url" spellcheck="false">
+        <div class="jump" style="margin-top:8px"><button id="saveBase" type="button">Save and reload games</button></div>
+      </div>
+    </details>
+  </section>
+</div>
+
+<script>
+"use strict";
+/* ---------- tiny utilities (pure) ---------- */
+const ESPN = "https://site.api.espn.com";
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const clockSec = s => { const m = /^(\d+):(\d{1,2})/.exec(String(s||"")); return m ? (+m[1])*60 + (+m[2]) : NaN; };
+const fmtDur = ms => { const s = Math.max(0, Math.round(ms/1000)); const h = Math.floor(s/3600), m = Math.floor(s%3600/60), x = s%60;
+  return h ? `${h}:${String(m).padStart(2,"0")}:${String(x).padStart(2,"0")}` : `${m}:${String(x).padStart(2,"0")}`; };
+const qLabel = q => q >= 5 ? (q === 5 ? "OT" : `OT${q-4}`) : `Q${q}`;
+const pct = (a,b) => b ? Math.round(100*a/b) + "%" : "–";
+const avg = (a,b) => b ? (a/b).toFixed(1) : "–";
+const store = {
+  get(k, d){ try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+};
+
+/* ---------- concepts: Play classification ---------- */
+function classify(p){
+  const t = (p.type?.text || "").toLowerCase(), x = (p.text || "").toLowerCase();
+  if (/timeout|end period|end of|two-minute|official|coin toss|end game|game start/.test(t)) return "admin";
+  if (/kickoff|punt|field goal|extra point|two-point|2pt/.test(t)) return "special";
+  if (/kneels|spiked|\bspike\b/.test(x)) return "admin";
+  if (/penalty/.test(t)) return "penalty";
+  if (/sack|pass|interception/.test(t) || /scrambles/.test(x)) return "pass";
+  if (/rush/.test(t)) return "run";
+  if (/fumble/.test(t)) return /pass|sacked/.test(x) ? "pass" : "run";
+  return "other";
+}
+const isOffense = k => k === "run" || k === "pass";
+const isTurnover = p => /interception|fumble recovery \(opponent\)|fumble return/i.test(p.typeText);
+function playYards(p, kind){
+  if (/interception/i.test(p.type?.text || "")) return 0;
+  const y = Number(p.statYardage);
+  return Number.isFinite(y) ? y : 0;
+}
+/* Per-drive box score from the plays revealed so far (pure). */
+function driveBox(ps){
+  const off = ps.filter(p => isOffense(p.kind));
+  const sacks = off.filter(p => /sack/i.test(p.typeText));
+  const scr = off.filter(p => /scrambles/i.test(p.text));
+  const att = off.filter(p => p.kind === "pass" && !sacks.includes(p) && !scr.includes(p));
+  const comp = att.filter(p => /reception|passing touchdown|pass complete/i.test(p.typeText));
+  const runs = off.filter(p => p.kind === "run" && !scr.includes(p));
+  const firsts = ps.filter(p => !isTurnover(p) && p.down && p.dist != null && (
+    (isOffense(p.kind) && (p.yards >= p.dist || p.scoring)) ||
+    (p.kind === "penalty" && p.endDown === 1 && p.down !== 1))).length;
+  const sum = a => a.reduce((t, p) => t + p.yards, 0);
+  return { plays: off.length, firsts, comp: comp.length, att: att.length, passYds: sum(att),
+    runs: runs.length, runYds: sum(runs), sacks: sacks.length, sackYds: sum(sacks), scr: scr.length };
+}
+function cat(s){
+  s = String(s || "").toLowerCase();
+  if (/td|touchdown/.test(s)) return "td";
+  if (/miss|blocked fg|no good/.test(s)) return "miss";
+  if (/fg|field goal/.test(s)) return "fg";
+  if (/punt/.test(s)) return "punt";
+  if (/int|fumble|downs|safety/.test(s)) return "to";
+  return "end";
+}
+
+/* ---------- parse ESPN summary -> Game (pure) ---------- */
+function parseSummary(j){
+  const comp = j.header?.competitions?.[0] || {};
+  const cs = comp.competitors || [];
+  const mk = c => ({ id: String(c.team?.id ?? c.id ?? ""), abbr: c.team?.abbreviation || "?",
+    name: c.team?.displayName || c.team?.name || "", short: c.team?.shortDisplayName || c.team?.name || "",
+    color: "#" + String(c.team?.color || "777777").replace("#","") });
+  const away = mk(cs.find(c => c.homeAway === "away") || cs[0] || {});
+  const home = mk(cs.find(c => c.homeAway === "home") || cs[1] || {});
+  const state = comp.status?.type?.state || "pre";
+  const prev = j.drives?.previous || [], cur = j.drives?.current;
+  const list = cur && !prev.some(d => String(d.id) === String(cur.id)) ? [...prev, cur] : prev;
+  const sideOf = d => {
+    const t = d.team || {};
+    const keys = [t.id, t.abbreviation, t.displayName, t.name, t.shortDisplayName].filter(Boolean).map(String);
+    const hit = side => keys.some(k => k === side.id || k === side.abbr || k === side.name || k === side.short);
+    if (hit(home)) return "home";
+    if (hit(away)) return "away";
+    const pt = (d.plays || []).find(p => p.start?.team?.id)?.start.team.id;
+    return pt != null && String(pt) === home.id ? "home" : "away";
+  };
+  const plays = [], drives = [];
+  list.forEach((d, di) => {
+    const side = sideOf(d), first = plays.length;
+    (d.plays || []).forEach(p => {
+      const kind = classify(p);
+      plays.push({
+        id: String(p.id ?? plays.length), drive: di, side, kind,
+        typeText: p.type?.text || "", text: p.text || "",
+        period: p.period?.number || 1, clock: p.clock?.displayValue || "",
+        clockSec: clockSec(p.clock?.displayValue),
+        away: +p.awayScore || 0, home: +p.homeScore || 0, scoring: !!p.scoringPlay,
+        wallclock: p.wallclock,
+        down: p.start?.down, dist: p.start?.distance, ytg: p.start?.yardsToEndzone,
+        dd: p.start?.downDistanceText || p.start?.shortDownDistanceText || "",
+        endDown: p.end?.down, endDist: p.end?.distance, endYtg: p.end?.yardsToEndzone,
+        endDD: p.end?.downDistanceText || p.end?.shortDownDistanceText || "",
+        yards: playYards(p, kind)
+      });
+    });
+    drives.push({ id: String(d.id ?? di), side, startText: d.start?.text || "",
+      startPeriod: d.start?.period?.number, startClock: d.start?.clock?.displayValue || "",
+      result: d.displayResult || d.result || "", short: d.shortDisplayResult || d.result || "",
+      elapsed: d.timeElapsed?.displayValue || "", first, last: plays.length - 1,
+      isCurrent: !!cur && String(d.id) === String(cur.id) && state === "in" });
+  });
+  // Wall-clock times give the delay cursor something to follow. Fill gaps and force monotonic order.
+  const t0 = Date.parse(comp.date) || Date.now();
+  let lastW = null;
+  plays.forEach((p, i) => {
+    let w = Date.parse(p.wallclock);
+    if (!Number.isFinite(w)) w = lastW != null ? lastW + 30000 : t0 + i * 40000;
+    if (lastW != null && w < lastW) w = lastW;
+    p.wc = w; lastW = w;
+  });
+  return { away, home, state, plays, drives };
+}
+
+/* ---------- concept: Cursor ----------
+   live:   show everything the feed has.
+   offset: virtual time T anchored at real time `at`; running advances T with the real clock (a DVR delay).   */
+const LIVE = Object.freeze({ live: true });
+const vtime = (c, now) => c.live ? Infinity : c.running ? c.T + (now - c.at) : c.T;
+const atTime = (c, T, now) => ({ live: false, T, at: now, running: c.live ? true : !!c.running });
+const revealed = (g, vt) => { if (vt === Infinity) return g.plays.length; let n = 0; for (const p of g.plays) { if (p.wc <= vt) n++; else break; } return n; };
+const cursorAtCount = (g, c, n, now) => {
+  n = Math.max(0, Math.min(g.plays.length, n));
+  if (n >= g.plays.length && g.state !== "in") return atTime(c, g.plays.length ? g.plays[n-1].wc : now, now);
+  const T = n > 0 ? g.plays[n-1].wc : (g.plays[0]?.wc ?? now) - 1;
+  return atTime(c, T, now);
+};
+function settle(c, now){ // a running cursor that catches real time becomes live
+  return !c.live && c.running && vtime(c, now) >= now ? LIVE : c;
+}
+
+/* ---------- view model (pure) ---------- */
+function buildView(g, n){
+  const shown = g.plays.slice(0, n);
+  const last = shown[n-1];
+  const drives = g.drives.filter(d => d.last >= d.first && d.first < n).map(d => {
+    const ps = g.plays.slice(d.first, Math.min(d.last + 1, n));
+    const done = d.last < n && !d.isCurrent;
+    const off = ps.filter(p => isOffense(p.kind));
+    const runs = off.filter(p => p.kind === "run").length;
+    return { ...d, plays: ps, done, snaps: off.length, runs, passes: off.length - runs,
+      yards: off.reduce((a, p) => a + p.yards, 0), cat: done ? cat(d.short || d.result) : "live",
+      label: done ? (d.short || d.result || "END").toUpperCase() : "ON FIELD" };
+  });
+  const team = side => {
+    const off = shown.filter(p => p.side === side && isOffense(p.kind));
+    const runs = off.filter(p => p.kind === "run"), pass = off.filter(p => p.kind === "pass");
+    const graded = off.filter(p => p.down && p.dist);
+    const succ = graded.filter(success).length;
+    const third = off.filter(p => p.down === 3);
+    const conv = third.filter(p => !isTurnover(p) && (p.yards >= p.dist || p.scoring)).length;
+    const ds = drives.filter(d => d.side === side);
+    const done = ds.filter(d => d.done);
+    const count = k => done.filter(d => d.cat === k).length;
+    return { drives: ds.length, td: count("td"), fg: count("fg"), punt: count("punt"), to: count("to"), miss: count("miss"),
+      runs: runs.length, runYds: runs.reduce((a,p)=>a+p.yards,0), drop: pass.length, passYds: pass.reduce((a,p)=>a+p.yards,0),
+      succ, graded: graded.length, third: third.length, conv,
+      ypp: off.length ? off.reduce((a,p)=>a+p.yards,0) / off.length : null };
+  };
+  const score = last ? { away: last.away, home: last.home } : { away: 0, home: 0 };
+  const lastDrive = last ? drives.find(d => d.first <= n-1 && n-1 <= Math.min(d.last, n-1) && d.plays.includes(last)) : null;
+  return { n, total: g.plays.length, last, score, drives, away: team("away"), home: team("home"),
+    situation: situation(g, last, lastDrive), next: g.plays[n] || null };
+}
+function success(p){
+  if (isTurnover(p)) return false;
+  if (p.scoring && p.yards > 0) return true;
+  const need = p.down === 1 ? 0.4 * p.dist : p.down === 2 ? 0.6 * p.dist : p.dist;
+  return p.yards >= need;
+}
+function situation(g, last, d){
+  if (!last) return { kind: "kickoff", text: "Opening kickoff", tips: TIPS.kickoff };
+  if (d && d.done) return { kind: "change", text: "Change of possession", tips: TIPS.kickoff };
+  const s = { down: last.endDown, dist: last.endDist, ytg: last.endYtg, period: last.period, sec: last.clockSec, side: last.side };
+  return { kind: "snap", text: last.endDD || "", side: last.side, tips: tipsFor(s) };
+}
+
+/* ---------- what to watch, by situation ---------- */
+const TIPS = {
+  kickoff: ["Watch where the returner catches it and whether he takes a touchback. Starting field position decides a lot of what the offense will call."],
+  first: "1st & 10: Count defenders in the box. Seven or more near the line favors a pass or play-action; six or fewer invites a run.",
+  secondLong: "2nd & long: The defense expects a pass. Watch for draws and screens, where the line lets rushers upfield on purpose.",
+  secondShort: "2nd & short: Offenses often take a deep shot here. Watch whether a safety steps up on the run fake.",
+  thirdLong: "3rd & long: Count rushers. Five or more is a blitz and the throw comes fast. Note where the catch happens relative to the line to gain.",
+  thirdMid: "3rd & medium: Look for crossing routes and option routes run right at the sticks. Watch the linebackers' depth.",
+  short: "Short yardage: Heavy personnel and maybe a QB sneak. Watch which line gets lower at the snap; the low side usually wins.",
+  fourth: "4th down: Is the offense going for it? Watch who runs on the field. A hard count to draw the defense offside is common.",
+  red: "Red zone: The field shrinks, so there are fewer deep routes and more man coverage. Watch fades, back-shoulder throws and picks near the goal line.",
+  goal: "Goal line: Watch for jumbo personnel, a QB sneak, or play-action to the tight end once the defense crowds the line.",
+  backed: "Backed up: The offense will run conservatively to get breathing room. A holding penalty in the end zone is a safety.",
+  twoMin: "Two-minute drill: Throws to the sideline stop the clock. Defenses play soft zone to keep the catch in front of them."
+};
+function tipsFor(s){
+  const out = [];
+  const late = (s.period === 2 || s.period >= 4) && Number.isFinite(s.sec) && s.sec <= 120;
+  if (late) out.push(TIPS.twoMin);
+  if (s.down === 4) out.push(TIPS.fourth);
+  if (s.dist != null && s.dist <= 2 && s.down >= 3) out.push(TIPS.short);
+  else if (s.down === 3) out.push(s.dist >= 7 ? TIPS.thirdLong : TIPS.thirdMid);
+  else if (s.down === 2) out.push(s.dist >= 7 ? TIPS.secondLong : s.dist <= 3 ? TIPS.secondShort : TIPS.first);
+  else if (s.down === 1) out.push(TIPS.first);
+  if (s.ytg != null && s.ytg <= 5) out.push(TIPS.goal);
+  else if (s.ytg != null && s.ytg <= 20) out.push(TIPS.red);
+  else if (s.ytg != null && s.ytg >= 90) out.push(TIPS.backed);
+  return out.slice(0, 3);
+}
+
+/* ---------- demo game (invented teams, generated from a fixed seed) ---------- */
+function makeDemo(now){
+  let seed = 20261102;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1));
+  const T = [
+    { id:"901", abbreviation:"HAR", displayName:"Harbor Pilots", shortDisplayName:"Pilots", color:"2b6f8f",
+      qb:"J. Calder", rb:"M. Okafor", wr:["T. Lindqvist","D. Pryce","A. Mendes"], k:"E. Saari" },
+    { id:"902", abbreviation:"RDG", displayName:"Ridge Foxes", shortDisplayName:"Foxes", color:"b4552c",
+      qb:"K. Varga", rb:"B. Ellery", wr:["S. Okonjo","L. Nunez","P. Kowal"], k:"R. Bastian" }];
+  const score = [0, 0], start = now - 105 * 60000;
+  let wc = start, period = 1, clock = 900, seq = 0;
+  const spot = (o, ytg) => ytg === 50 ? "50" : ytg > 50 ? `${T[o].abbreviation} ${100-ytg}` : `${T[1-o].abbreviation} ${ytg}`;
+  const ord = d => ["1st","2nd","3rd","4th"][d-1];
+  const dd = (o, d, dist, ytg) => `${ord(d)} & ${ytg <= dist ? "Goal" : dist} at ${spot(o, ytg)}`;
+  const mmss = s => `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
+  const drives = [];
+  let off = 0, ytg = 70, kick = true, gameOver = false;
+  while (!gameOver) {
+    const d = { id: String(drives.length + 1), team: T[off], start: { period:{number:period}, clock:{displayValue:mmss(clock)}, text: spot(off, ytg) }, plays: [] };
+    drives.push(d);
+    const t0 = clock, p0 = period;
+    let down = 1, dist = Math.min(10, ytg), result = null, nextYtg = 70, nextKick = true;
+    const add = (o) => {
+      seq++;
+      const play = { id: String(1000 + seq), sequenceNumber: String(seq), type: { text: o.type }, text: o.text,
+        period: { number: period }, clock: { displayValue: mmss(clock) },
+        awayScore: score[0], homeScore: score[1], scoringPlay: !!o.scoring,
+        start: { down, distance: dist, yardsToEndzone: ytg, downDistanceText: o.noDD ? "" : dd(off, down, dist, ytg) },
+        end: o.end, statYardage: o.yards ?? 0 };
+      wc += (28 + ri(0, 22)) * 1000 + (o.scoring ? 120000 : 0);
+      play.wallclock = new Date(wc).toISOString();
+      d.plays.push(play);
+      clock -= o.use;
+      if (clock <= 0) {
+        period++; clock = 900; wc += period === 3 ? 13 * 60000 : 120000;
+        if (period === 3 || period === 5) return true;
+      }
+      return false;
+    };
+    if (kick) {
+      const ret = ri(15, 32);
+      add({ type: "Kickoff", text: `${T[1-off].k} kicks 65 yards from ${T[1-off].abbreviation} 35 to the ${T[off].abbreviation} 3. ${T[off].rb} returns ${ret} yards.`, use: 5, noDD: true,
+        end: { down:1, distance:10, yardsToEndzone: ytg, downDistanceText: dd(off,1,10,ytg) } });
+    }
+    let halfEnded = false;
+    while (!result) {
+      const endState = (nd, ndist, ny) => ({ down: nd, distance: ndist, yardsToEndzone: ny, downDistanceText: dd(off, nd, ndist, ny) });
+      if (down === 4) {
+        if (ytg <= 37) {
+          const yds = ytg + 17, good = rnd() < (yds < 40 ? 0.95 : yds < 50 ? 0.82 : 0.6);
+          if (good) { score[off] += 3; }
+          halfEnded = add({ type: good ? "Field Goal Good" : "Field Goal Missed", scoring: good,
+            text: `${T[off].k} ${yds} yard field goal is ${good ? "GOOD" : "No Good, wide right"}.`, use: 5, end: endState(4, dist, ytg) });
+          if (good) { d.plays[d.plays.length-1].awayScore = score[0]; d.plays[d.plays.length-1].homeScore = score[1]; }
+          result = good ? ["Field Goal","FG"] : ["Missed FG","MISSED FG"];
+          nextYtg = good ? 70 : Math.min(80, 100 - (ytg + 7)); nextKick = good; break;
+        }
+        if (!(dist <= 1 && ytg <= 55)) {
+          const net = ri(36, 50), land = ytg - net;
+          halfEnded = add({ type: "Punt", text: `${T[off].k.replace(/^.\. /,"C. ")} punts ${net} yards${land <= 0 ? ", touchback." : ` to ${spot(off, land)}, fair catch.`}`, use: 8, end: endState(4, dist, ytg) });
+          result = ["Punt","PUNT"]; nextYtg = land <= 0 ? 80 : 100 - land; nextKick = false; break;
+        }
+      }
+      const r = rnd();
+      if (r < 0.04) { // false start
+        halfEnded = add({ type: "Penalty", text: `PENALTY on ${T[off].abbreviation}, False Start, 5 yards, enforced at ${spot(off, ytg)} - No Play.`, yards: -5, use: 0,
+          end: endState(down, dist + 5, Math.min(99, ytg + 5)) });
+        ytg = Math.min(99, ytg + 5); dist += 5; if (halfEnded) break; continue;
+      }
+      const passP = down === 3 && dist >= 5 ? 0.85 : down >= 3 && dist <= 2 ? 0.35 : dist >= 8 ? 0.66 : 0.52;
+      let o;
+      if (rnd() < passP) {
+        const x = rnd(), wr = T[off].wr[ri(0,2)];
+        if (x < 0.065) { const g = -ri(4, 9); o = { type: "Sack", yards: g, use: 35, text: `${T[off].qb} sacked at ${spot(off, Math.min(99, ytg - g))} for ${g} yards.` }; }
+        else if (x < 0.09) { o = { type: "Pass Interception Return", yards: 0, use: 8, to: true, text: `${T[off].qb} pass deep middle intended for ${wr} INTERCEPTED.` }; }
+        else if (x < 0.70) {
+          let g = rnd() < 0.07 ? ri(20, 50) : ri(2, 15);
+          const td = g >= ytg; if (td) g = ytg;
+          const dir = ["short left","short middle","short right","deep left","deep right"][ri(0,4)];
+          o = { type: td ? "Passing Touchdown" : "Pass Reception", yards: g, use: 34, td,
+            text: `${T[off].qb} pass ${dir} to ${wr} for ${g} yards${td ? ", TOUCHDOWN." : "."}` };
+        } else if (x < 0.75 && dist >= 4) {
+          const g = Math.min(ytg, ri(3, 14)), td = g >= ytg;
+          o = { type: td ? "Rushing Touchdown" : "Rush", yards: g, use: 33, td, text: `${T[off].qb} scrambles right end for ${g} yards${td ? ", TOUCHDOWN." : "."}` };
+        } else { o = { type: "Pass Incompletion", yards: 0, use: 5, text: `${T[off].qb} pass incomplete ${["short left","deep right","short right"][ri(0,2)]} intended for ${wr}.` }; }
+      } else {
+        if (rnd() < 0.012) { o = { type: "Fumble Recovery (Opponent)", yards: 1, use: 8, to: true, text: `${T[off].rb} up the middle for 1 yard. FUMBLES, recovered by ${T[1-off].abbreviation}.` }; }
+        else {
+          let g = rnd() < 0.04 ? ri(12, 40) : Math.max(-3, Math.round(4.2 + (rnd() + rnd() + rnd() - 1.5) * 5));
+          const td = g >= ytg; if (td) g = ytg;
+          const dir = ["left end","left tackle","up the middle","right guard","right end"][ri(0,4)];
+          o = { type: td ? "Rushing Touchdown" : "Rush", yards: g, use: 36, td, text: `${T[off].rb} ${dir} for ${g} yards${td ? ", TOUCHDOWN." : "."}` };
+        }
+      }
+      if (o.td) {
+        score[off] += 7;
+        halfEnded = add({ ...o, scoring: true, text: o.text + ` ${T[off].k} extra point is GOOD.`, end: endState(1, 10, 0) });
+        const lp = d.plays[d.plays.length-1]; lp.awayScore = score[0]; lp.homeScore = score[1];
+        result = ["Touchdown","TD"]; nextYtg = ri(62, 75); nextKick = true; break;
+      }
+      if (o.to) {
+        halfEnded = add({ ...o, end: endState(down, dist, ytg) });
+        result = o.type.startsWith("Pass") ? ["Interception","INT"] : ["Fumble","FUMBLE"];
+        nextYtg = Math.max(8, Math.min(92, 100 - ytg + ri(-15, 10))); nextKick = false; break;
+      }
+      const ny = Math.min(99, ytg - o.yards);
+      let nd, ndist;
+      if (o.yards >= dist) { nd = 1; ndist = Math.min(10, ny); } else { nd = down + 1; ndist = dist - o.yards; }
+      if (nd > 4) {
+        halfEnded = add({ ...o, end: endState(4, ndist, ny) });
+        result = ["Downs","DOWNS"]; nextYtg = 100 - ny; nextKick = false; break;
+      }
+      halfEnded = add({ ...o, end: endState(nd, ndist, ny) });
+      down = nd; dist = ndist; ytg = ny;
+      if (halfEnded) break;
+    }
+    if (halfEnded && !result) result = period >= 5 ? ["End of Game","END OF GAME"] : ["End of Half","END OF HALF"];
+    const elapsed = p0 === period ? t0 - clock : t0 + (900 - clock);
+    d.displayResult = result[0]; d.shortDisplayResult = result[1]; d.result = result[0];
+    d.timeElapsed = { displayValue: mmss(Math.max(0, elapsed)) };
+    if (period >= 5) { gameOver = true; break; }
+    if (halfEnded && period === 3) { off = 1; ytg = 70; kick = true; continue; }
+    off = 1 - off; ytg = nextYtg; kick = nextKick;
+  }
+  // Present the feed as it would look "now": only plays that have already happened.
+  const prev = [], cutoff = now;
+  let current = null;
+  for (const d of drives) {
+    const ps = d.plays.filter(p => Date.parse(p.wallclock) <= cutoff);
+    if (!ps.length) break;
+    if (ps.length < d.plays.length) { current = { ...d, plays: ps, displayResult: "", shortDisplayResult: "", result: "" }; break; }
+    prev.push(d);
+  }
+  const lastP = (current?.plays || prev[prev.length-1]?.plays || []).slice(-1)[0];
+  const done = !current && prev.length === drives.length;
+  return {
+    header: { competitions: [{ date: new Date(start).toISOString(),
+      status: { type: { state: done ? "post" : "in" } },
+      competitors: [
+        { homeAway: "away", team: T[0], score: String(lastP?.awayScore ?? 0) },
+        { homeAway: "home", team: T[1], score: String(lastP?.homeScore ?? 0) }] }] },
+    drives: { previous: current ? [...prev, current] : prev, current: current || undefined }
+  };
+}
+
+/* ---------- data access ---------- */
+const DEMO_ID = "demo";
+const baseUrl = () => store.get("dc.base", ESPN) || ESPN;
+async function getJSON(path){
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 10000);
+  try {
+    const r = await fetch(baseUrl().replace(/\/$/, "") + path, { signal: ctl.signal });
+    if (!r.ok) throw new Error(`Feed returned ${r.status}`);
+    return await r.json();
+  } finally { clearTimeout(t); }
+}
+async function loadScoreboard(q){ return getJSON("/apis/site/v2/sports/football/nfl/scoreboard" + (q || "")); }
+async function loadGame(id){ return id === DEMO_ID ? makeDemo(Date.now()) : getJSON(`/apis/site/v2/sports/football/nfl/summary?event=${encodeURIComponent(id)}`); }
+
+/* ---------- app state (the only mutable cell) ---------- */
+let S = { view: "games", board: null, boardErr: null, weekQ: "", gameId: null, game: null, gameErr: null,
+  cursor: LIVE, open: new Set(), lastN: -1, scrub: null };
+const app = document.getElementById("app");
+const cursorKey = id => "dc.cursor." + id;
+function setCursor(c){ S.cursor = c; if (S.gameId) store.set(cursorKey(S.gameId), c); paint(true); }
+
+/* ---------- render (pure string builders + one paint) ---------- */
+const teamDot = t => `<span class="dot" style="background:${esc(t.color)}"></span>`;
+function gamesHTML(){
+  const b = S.board;
+  const head = `<div class="weekbar"><button class="back" data-act="week" data-d="-1">‹ Week</button>
+    <h2>${b ? esc(b.label) : "NFL games"}</h2><button class="back" data-act="week" data-d="1">Week ›</button></div>`;
+  let body = "";
+  if (S.boardErr) body += `<p class="note err">Couldn't reach the game feed (${esc(S.boardErr)}). If this page is open inside Claude, its sandbox blocks outside data; open the hosted copy instead, or point the data source at a relay. The demo game below works anywhere.</p>`;
+  else if (!b) body += `<p class="empty">Loading games…</p>`;
+  const rows = (b?.events || []).map(e => {
+    const c = e.competitions?.[0]?.competitors || [];
+    const a = c.find(x => x.homeAway === "away")?.team || {}, h = c.find(x => x.homeAway === "home")?.team || {};
+    const st = e.status?.type?.state || "pre";
+    const when = new Date(e.date).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" });
+    const chip = st === "in" ? `<span class="chip in">Live</span>` : st === "post" ? `<span class="chip">Final</span>` : `<span class="chip">${esc(when)}</span>`;
+    return `<button class="game" data-act="open" data-id="${esc(e.id)}"><span class="m">${teamDot({color:"#"+(a.color||"777")})}${esc(a.abbreviation)} <span class="when">at</span> ${teamDot({color:"#"+(h.color||"777")})}${esc(h.abbreviation)}</span>${chip}</button>`;
+  }).join("");
+  const demo = `<button class="game" data-act="open" data-id="${DEMO_ID}"><span class="m">Demo game <span class="when">invented teams, plays arriving live</span></span><span class="chip in">Demo</span></button>`;
+  return `<section>${head}${body}<div class="games">${rows}${demo}</div>
+    <p class="note">Scores are hidden here. Inside a game, the score shown is the score as of your cursor.</p></section>`;
+}
+
+function statusPill(c, now, g){
+  if (c.live) return g.state === "post" ? `<span class="pill paused">FINAL</span>` : `<span class="pill live">LIVE</span>`;
+  const behind = now - vtime(c, now);
+  if (!c.running) return `<span class="pill paused">PAUSED</span>`;
+  return `<span class="pill delay">−${fmtDur(behind)}</span>`;
+}
+function playId(p){ // what the TV score bug shows before the snap
+  return `${qLabel(p.period)} ${esc(p.clock)}${p.dd ? " · " + esc(p.dd) : ""}`;
+}
+function topHTML(g, v, now){
+  const c = S.cursor, last = v.last;
+  const gclock = last ? `${qLabel(last.period)} ${esc(last.clock)}` : "Pregame";
+  const possSide = v.situation.kind === "snap" ? v.situation.side : null;
+  const nx = v.next;
+  const nextLine = nx ? `<div class="dd">${esc(nx.dd || nx.typeText)}</div><div class="sub num">${qLabel(nx.period)} ${esc(nx.clock)} · ${esc(g[nx.side].abbr)} ball · play ${v.n + 1} of ${v.total}</div>`
+    : `<div class="dd">${g.state === "post" ? "End of game" : "Waiting for the next play"}</div><div class="sub">${v.total} plays so far</div>`;
+  const disPrev = v.n === 0 ? "disabled" : "", disNext = v.n >= v.total ? "disabled" : "";
+  return `<div class="top">
+    <div class="bug">
+      <button class="back" data-act="games" aria-label="All games">‹</button>
+      <div class="score num"><span class="t">${teamDot(g.away)}${esc(g.away.abbr)}${possSide==="away"?'<span class="poss">●</span>':""} ${v.score.away}</span><span class="sep">–</span><span class="t">${v.score.home} ${esc(g.home.abbr)}${possSide==="home"?'<span class="poss">●</span>':""}${teamDot(g.home)}</span></div>
+      <div class="status">${statusPill(c, now, g)}<span class="gclock num">${gclock}</span></div>
+    </div>
+    <div class="next"><div class="what"><div class="label">Next snap</div>${nextLine}</div></div>
+    <div class="btns">
+      <button class="tb" data-act="prevDrive" ${disPrev}>‹‹<small>Drive</small></button>
+      <button class="tb" data-act="prev" ${disPrev}>‹<small>Play</small></button>
+      <button class="tb big" data-act="next" ${disNext}>Next play<small>reveal 1</small></button>
+      <button class="tb" data-act="nextDrive" ${disNext}>››<small>Drive</small></button>
+      <button class="tb ${c.live ? "on" : ""}" data-act="live">${g.state === "post" ? "End" : "Live"}<small>${c.live ? (g.state === "post" ? "all plays" : "watching") : "go live"}</small></button>
+    </div>
+    <div class="scrub">
+      <input id="scrub" type="range" min="0" max="${v.total}" step="1" value="${S.scrub ?? v.n}" aria-label="Plays revealed">
+      <div class="scrubtip" id="scrubtip">${scrubTip(g, S.scrub ?? v.n)}</div>
+    </div>
+    <div class="btns" style="grid-template-columns:repeat(4,1fr)">
+      <button class="tb" data-act="toggle">${c.live ? "Pause" : c.running ? "Pause" : "Run"}<small>${c.running && !c.live ? "follows delay" : c.live ? "freeze here" : "keep pace"}</small></button>
+      <button class="tb" data-act="shift" data-s="-30">−30s<small>delay</small></button>
+      <button class="tb" data-act="shift" data-s="30">+30s<small>delay</small></button>
+      <button class="tb" data-act="kickoff">Start<small>kickoff</small></button>
+    </div>
+  </div>`;
+}
+function scrubTip(g, n){
+  if (n <= 0) return `<b>Before kickoff</b>`;
+  if (n >= g.plays.length) return `<b>All ${g.plays.length} plays</b>`;
+  const p = g.plays[n];
+  return `Stops before <b>${playId(p)}</b>`;
+}
+function bodyHTML(g, v){
+  const sit = v.situation;
+  const watch = `<section class="card watch">
+    <div class="sechead"><h2>What to watch</h2><span class="label">${sit.kind === "snap" ? esc(g[sit.side].abbr) + " ball" : ""}</span></div>
+    <div class="sit">${esc(sit.text)}</div>
+    <ul>${sit.tips.map(t => `<li>${esc(t)}</li>`).join("")}</ul></section>`;
+  const A = v.away, H = v.home;
+  const splitBar = t => { const tot = t.runs + t.drop; return tot ? `<div class="split"><i style="width:${100*t.runs/tot}%;background:var(--run)"></i><i style="width:${100*t.drop/tot}%;background:var(--pass)"></i></div>` : ""; };
+  const res = t => [["td","TD"],["fg","FG"],["punt","P"],["to","TO"],["miss","X"]].filter(([k]) => t[k]).map(([k,l]) => `<span class="badge b-${k}">${t[k]} ${l}</span>`).join("") || "–";
+  const row = (label, f) => `<tr><td>${label}</td><td>${f(A)}</td><td>${f(H)}</td></tr>`;
+  const stats = `<section class="card">
+    <div class="sechead"><h2>Team totals</h2><span class="label">as of cursor</span></div>
+    <div style="overflow-x:auto"><table class="ts">
+      <thead><tr><th></th><th>${teamDot(g.away)} ${esc(g.away.abbr)}</th><th>${teamDot(g.home)} ${esc(g.home.abbr)}</th></tr></thead>
+      <tbody>
+        ${row("Drives", t => t.drives)}
+        ${row("Results", t => `<div class="res-row">${res(t)}</div>`)}
+        ${row("Run / pass", t => `${t.runs} / ${t.drop}${splitBar(t)}`)}
+        ${row("Yds per rush", t => avg(t.runYds, t.runs))}
+        ${row("Yds per dropback", t => avg(t.passYds, t.drop))}
+        ${row("Success rate", t => pct(t.succ, t.graded))}
+        ${row("3rd down", t => t.third ? `${t.conv}/${t.third}` : "–")}
+      </tbody></table></div></section>`;
+  const drives = v.drives.slice().reverse().map(d => {
+    const t = g[d.side], open = S.open.has(d.id);
+    const tot = d.runs + d.passes;
+    const mini = tot ? `<span class="minisplit"><i style="width:${100*d.runs/tot}%;background:var(--run)"></i><i style="width:${100*d.passes/tot}%;background:var(--pass)"></i></span>` : "";
+    const plays = open ? `<div class="plays">${boxHTML(d)}${d.plays.map(playHTML).join("")}</div>` : "";
+    return `<div class="drive ${d.done ? "" : "cur"}"><button data-act="drive" data-id="${esc(d.id)}" aria-expanded="${open}">
+      <span class="who">${teamDot(t)}${esc(t.abbr)}</span>
+      <span class="mid"><div class="line1 num">${d.snaps} plays · ${d.yards} yds${d.done && d.elapsed ? " · " + esc(d.elapsed) : ""}</div>
+      <div class="line2 num">${d.startPeriod ? qLabel(d.startPeriod) + " " + esc(d.startClock) + " · " : ""}from ${esc(d.startText || "–")} ${mini}<span>${d.runs}R ${d.passes}P</span></div></span>
+      <span class="badge b-${d.cat}">${esc(d.label)}</span></button>${plays}</div>`;
+  }).join("");
+  const log = `<section><div class="sechead"><h2>Drives</h2><span class="label">newest first · tap for plays</span></div>
+    ${v.drives.length ? drives : `<p class="empty card">No plays yet at this point in the game.</p>`}</section>`;
+  return watch + stats + log;
+}
+function boxHTML(d){
+  const b = driveBox(d.plays);
+  const cell = (l, v, sub) => `<div><div class="label">${l}</div><div class="bv num">${v}</div>${sub ? `<div class="bs num">${sub}</div>` : ""}</div>`;
+  return `<div class="box">
+    ${cell("Outcome", esc(d.done ? (d.result || d.label) : "In progress"))}
+    ${cell("Plays", b.plays, `${d.yards} yds`)}
+    ${cell("1st downs", b.firsts)}
+    ${cell("Passing", `${b.comp}/${b.att}`, b.att ? `${(b.passYds / b.att).toFixed(1)} per att` : "")}
+    ${cell("Rushing", b.runs, b.runs ? `${(b.runYds / b.runs).toFixed(1)} per run` : "")}
+    ${cell("Sacks", b.sacks, b.sacks ? `${b.sackYds} yds` : (b.scr ? `${b.scr} scramble${b.scr > 1 ? "s" : ""}` : ""))}
+  </div>`;
+}
+function playHTML(p){
+  const k = { run: "RUN", pass: "PASS", penalty: "FLAG", special: "KICK", admin: "—", other: "—" }[p.kind];
+  const y = isOffense(p.kind) ? `${p.yards > 0 ? "+" : ""}${p.yards}` : "";
+  return `<div class="play ${p.scoring ? "sc" : ""}"><span class="k k-${p.kind}">${k}</span>
+    <div class="id num">${playId(p)}<span class="y">${y}</span></div>
+    <div class="tx">${esc(p.text)}</div></div>`;
+}
+
+let lastTop = "";
+function paint(force){
+  const now = Date.now();
+  if (S.view === "games") { lastTop = ""; app.innerHTML = gamesHTML(); return; }
+  const g = S.game;
+  if (!g) {
+    app.innerHTML = `<div class="top"><div class="bug"><button class="back" data-act="games">‹</button><div class="score">${S.gameErr ? "Couldn't load game" : "Loading…"}</div></div></div>
+      ${S.gameErr ? `<p class="note err">${esc(S.gameErr)}. Inside Claude the page's sandbox blocks the ESPN feed; the demo game and the hosted copy both work.</p>` : ""}`;
+    return;
+  }
+  S.cursor = settle(S.cursor, now);
+  const n = revealed(g, vtime(S.cursor, now));
+  const v = buildView(g, n);
+  const top = topHTML(g, v, now);
+  if (force || n !== S.lastN || !document.getElementById("body")) {
+    S.lastN = n;
+    const active = document.activeElement?.id;
+    app.innerHTML = `<div id="topbox">${top}</div><div id="body">${bodyHTML(g, v)}${S.gameId === DEMO_ID ? '<span class="demo-flag">Demo data: invented teams and players.</span>' : ""}</div>`;
+    lastTop = top;
+    if (active) document.getElementById(active)?.focus();
+  } else if (top !== lastTop && S.scrub == null) {
+    document.getElementById("topbox").innerHTML = top; lastTop = top;
+  }
+}
+
+/* ---------- actions ---------- */
+function curN(now){ return revealed(S.game, vtime(S.cursor, now)); }
+function driveStarts(g){ return g.drives.filter(d => d.last >= d.first).map(d => d.first); }
+const actions = {
+  games(){ S.view = "games"; S.game = null; S.gameId = null; if (!S.board) refreshBoard(); paint(true); },
+  async open(el){
+    S.gameId = el.dataset.id; S.view = "game"; S.game = null; S.gameErr = null; S.open = new Set(); S.lastN = -1;
+    store.set("dc.lastGame", S.gameId); paint(true);
+    await refreshGame(true);
+  },
+  next(){ const now = Date.now(); setCursor(cursorAtCount(S.game, S.cursor, curN(now) + 1, now)); },
+  prev(){ const now = Date.now(); setCursor({ ...cursorAtCount(S.game, S.cursor, curN(now) - 1, now) }); },
+  // Stop just before the next drive's first play (the end of the current drive).
+  nextDrive(){ const now = Date.now(), n = curN(now), g = S.game;
+    setCursor(cursorAtCount(g, S.cursor, driveStarts(g).find(f => f > n) ?? g.plays.length, now)); },
+  // Back to the start of this drive; if already there, the previous one.
+  prevDrive(){ const now = Date.now(), n = curN(now), g = S.game;
+    setCursor(cursorAtCount(g, S.cursor, driveStarts(g).filter(f => f < n).pop() ?? 0, now)); },
+  live(){ setCursor(LIVE); },
+  toggle(){ const now = Date.now(), c = S.cursor;
+    if (c.live) { const n = curN(now); setCursor({ ...cursorAtCount(S.game, c, n, now), running: false }); return; }
+    setCursor({ live: false, T: vtime(c, now), at: now, running: !c.running }); },
+  shift(el){ const now = Date.now(), s = +el.dataset.s * 1000, c = S.cursor;
+    const base = c.live ? now : vtime(c, now);
+    setCursor(settle({ live: false, T: base + s, at: now, running: c.live ? true : c.running }, now)); },
+  kickoff(){ const now = Date.now(); setCursor({ ...cursorAtCount(S.game, S.cursor, 0, now), running: false }); },
+  drive(el){ const id = el.dataset.id; S.open.has(id) ? S.open.delete(id) : S.open.add(id); paint(true); },
+  week(el){ const b = S.board; if (!b?.week) return; let w = b.week + (+el.dataset.d), t = b.stype;
+    if (w < 1) { w = 1; } if (t === 2 && w > 18) { t = 3; w = 1; }
+    if (t === 3 && w < 1) { t = 2; w = 18; }
+    S.weekQ = `?week=${w}&seasontype=${t}&dates=${b.year}`; S.board = null; paint(true); refreshBoard(); }
+};
+app.addEventListener("click", e => {
+  const el = e.target.closest("[data-act]"); if (!el || el.disabled) return;
+  const f = actions[el.dataset.act]; if (f) f(el);
+});
+app.addEventListener("input", e => {
+  if (e.target.id !== "scrub") return;
+  S.scrub = +e.target.value;
+  document.getElementById("scrubtip").innerHTML = scrubTip(S.game, S.scrub);
+});
+app.addEventListener("change", e => {
+  if (e.target.id !== "scrub") return;
+  const now = Date.now(), n = +e.target.value; S.scrub = null;
+  setCursor(cursorAtCount(S.game, S.cursor, n, now));
+});
+
+/* ---------- loading ---------- */
+async function refreshBoard(){
+  S.boardErr = null;
+  try {
+    const j = await loadScoreboard(S.weekQ);
+    S.board = { events: (j.events || []).slice().sort((a,b) => Date.parse(a.date) - Date.parse(b.date)),
+      week: j.week?.number, stype: j.season?.type, year: j.season?.year,
+      label: j.week?.number ? `${j.season?.type === 3 ? "Playoffs" : "Week"} ${j.week.number}` : "NFL games" };
+  } catch (err) { S.boardErr = err.name === "AbortError" ? "timed out" : (err.message || "blocked"); S.board = { events: [], label: "NFL games" }; }
+  if (S.view === "games") paint(true);
+}
+async function refreshGame(first){
+  const id = S.gameId; if (!id) return;
+  try {
+    const j = await loadGame(id);
+    if (S.gameId !== id) return;
+    const g = parseSummary(j);
+    S.game = g; S.gameErr = null;
+    if (first) {
+      const saved = store.get(cursorKey(id), null);
+      S.cursor = saved && (saved.live || Number.isFinite(saved.T)) ? saved
+        : g.state === "post" ? { ...cursorAtCount(g, LIVE, 0, Date.now()), running: false } : LIVE;
+    }
+    paint(true);
+  } catch (err) {
+    if (S.gameId !== id) return;
+    if (!S.game) { S.gameErr = err.name === "AbortError" ? "The feed timed out" : (err.message || "The feed is unreachable"); paint(true); }
+  }
+}
+
+/* ---------- settings ---------- */
+const baseInput = document.getElementById("base");
+baseInput.value = baseUrl();
+document.getElementById("saveBase").addEventListener("click", () => {
+  const v = baseInput.value.trim() || ESPN; store.set("dc.base", v); S.board = null; actions.games();
+});
+
+/* ---------- clocks ---------- */
+setInterval(() => { if (S.view === "game" && S.game && S.scrub == null) paint(false); }, 1000);
+setInterval(() => { if (S.view === "game" && S.game?.state === "in") refreshGame(false); }, 20000);
+
+/* ---------- boot ---------- */
+(function boot(){
+  const last = store.get("dc.lastGame", null);
+  refreshBoard();
+  if (last) actions.open({ dataset: { id: last } });
+  else paint(true);
+})();
+</script>
