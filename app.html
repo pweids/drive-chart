@@ -744,8 +744,7 @@ function bodyHTML(g, v){
     ${v.drives.length ? drives : `<p class="empty card">No plays yet at this point in the game.</p>`}</section>`;
   return stats + log;
 }
-// Band that opens a set of downs: yards the offense has traveled from its own goal line
-// (own 28 -> 28, opponent's 40 -> 60), i.e. 100 minus yards to the end zone.
+// Band that opens a set of downs: yards to go to the end zone.
 function ownYardLine(p){
   // Read the spot from the down text ("1st & 10 at CHI 28"): own side -> 28, opponent's 40 -> 60.
   const m = /\bat\s+(?:([A-Z]{2,4})\s+)?(\d{1,2})\b/.exec(p.dd || "");
@@ -757,8 +756,9 @@ function ownYardLine(p){
   return Number.isFinite(p.ytg) ? 100 - p.ytg : null;
 }
 function seriesBand(p){
-  const y = ownYardLine(p);
-  return `<div class="sgap" aria-label="${y == null ? "New set of downs" : "1st down at the " + y}"><span class="num">${y == null ? "" : y}</span></div>`;
+  // Yards still to go to the end zone being attacked: CHI ball at CHI 28 -> 72, at SEA 31 -> 31.
+  const own = ownYardLine(p), y = own == null ? null : 100 - own;
+  return `<div class="sgap" aria-label="${y == null ? "New set of downs" : y + " yards to the end zone"}"><span class="num">${y == null ? "" : y}</span></div>`;
 }
 function seriesSplit(ps){
   let prev = null;
