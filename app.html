@@ -332,7 +332,8 @@ function parseSummary(j){
   plays.forEach((p, i) => {
     let w = Date.parse(p.wallclock);
     if (!Number.isFinite(w)) w = lastW != null ? lastW + 30000 : t0 + i * 40000;
-    if (lastW != null && w < lastW) w = lastW;
+    // Strictly increasing, so plays logged in the same second still get distinct cursor stops.
+    if (lastW != null && w <= lastW) w = lastW + 1;
     p.wc = w; lastW = w;
   });
   return { away, home, state, plays, drives };
@@ -610,8 +611,8 @@ function makeDemo(now){
 /* ---------- data access ---------- */
 const DEMO_ID = "demo";
 const baseUrl = () => store.get("dc.base", ESPN) || ESPN;
-async function getJSON(path){
-  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 10000);
+async function getJSON(path, ms = 10000){
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), ms);
   try {
     // Bust caches: Safari and ESPN's CDN otherwise hand back the same response for minutes.
     const url = baseUrl().replace(/\/$/, "") + path + (path.includes("?") ? "&" : "?") + "_=" + Date.now();
@@ -621,7 +622,7 @@ async function getJSON(path){
   } finally { clearTimeout(t); }
 }
 async function loadScoreboard(q){ return getJSON("/apis/site/v2/sports/football/nfl/scoreboard" + (q || "")); }
-async function loadGame(id){ return id === DEMO_ID ? makeDemo(Date.now()) : getJSON(`/apis/site/v2/sports/football/nfl/summary?event=${encodeURIComponent(id)}`); }
+async function loadGame(id){ return id === DEMO_ID ? makeDemo(Date.now()) : getJSON(`/apis/site/v2/sports/football/nfl/summary?event=${encodeURIComponent(id)}`, 30000); }
 
 /* ---------- app state (the only mutable cell) ---------- */
 let S = { view: "games", board: null, boardErr: null, weekQ: "", gameId: null, game: null, gameErr: null,
@@ -764,7 +765,7 @@ function bodyHTML(g, v){
       <span class="badge b-${d.cat}">${esc(d.label)}</span></button>${plays}</div>`;
   }).join("");
   const log = `<section><div class="sechead"><h2>Drives</h2><span class="label">newest first · tap for plays</span></div>
-    ${v.drives.length ? drives : `<p class="empty card">No plays yet at this point in the game.</p>`}</section>`;
+    ${v.drives.length ? drives : emptyHTML(g, v)}</section>`;
   return stats + log;
 }
 // Band that opens a set of downs.
@@ -813,6 +814,12 @@ function passResult(p){
   if (/scrambles/i.test(p.text)) return "scramble";
   if (/incomplet/i.test(p.typeText) || /pass incomplete/i.test(p.text)) return "inc";
   return "comp";
+}
+function emptyHTML(g, v){
+  if (!v.total) return `<p class="empty card">No plays logged yet.</p>`;
+  const what = g.state === "post" ? `Final · ${v.total} plays logged` : `${v.total} plays logged so far`;
+  return `<div class="empty card"><p style="margin:0 0 10px"><b>${what}.</b> You're at kickoff, so nothing is revealed yet.</p>
+    <div class="jump" style="justify-content:center"><button type="button" data-act="next">Step from kickoff</button><button type="button" data-act="live">Show all plays</button></div></div>`;
 }
 function playHTML(p){
   const pr = passResult(p);
