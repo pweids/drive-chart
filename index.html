@@ -68,11 +68,6 @@ h2{font-family:var(--display);font-weight:700;font-size:20px;letter-spacing:.02e
 .pill.paused{background:var(--surface-2)}
 .pill.delay{color:var(--accent);border-color:var(--accent)}
 .fresh{font-size:11px;color:var(--muted)}
-.feed{margin-top:8px;font-size:12px;color:var(--muted)}
-.feed .bar{height:3px;border-radius:2px;background:var(--line);overflow:hidden;margin-bottom:3px}
-.feed .bar i{display:block;height:100%;background:var(--muted)}
-.feed.stale{color:var(--to)}
-.feed.stale .bar i{background:var(--to)}
 .gclock{font-family:var(--display);font-weight:600;font-size:15px;color:var(--muted)}
 
 /* transport */
@@ -698,18 +693,6 @@ function upcomingHTML(g, v){
   const when = last ? `after ${qLabel(last.period)} ${esc(last.clock)} play · ` : "";
   return `<div class="dd">${head}</div><div class="sub num">${who}${when}waiting for the snap</div>`;
 }
-// Feed heartbeat: a bar that fills until the next check, plus how long since ESPN logged a play.
-const POLL_MS = 15000;
-function feedLine(g, now){
-  const since = S.fetchedAt ? now - S.fetchedAt : 0;
-  const fill = Math.min(100, Math.round(100 * since / POLL_MS));
-  const lastP = g.plays[g.plays.length - 1];
-  const quiet = lastP && Number.isFinite(Date.parse(lastP.wallclock)) ? now - Date.parse(lastP.wallclock) : null;
-  const stale = S.feedErr || since > POLL_MS * 2.5;
-  const text = stale ? `Feed not responding${S.feedErr ? ": " + esc(S.feedErr) : ""} · last check ${fmtDur(since)} ago`
-    : `Checked ${fmtDur(since)} ago${quiet != null ? ` · last play logged ${fmtDur(quiet)} ago` : ""}`;
-  return `<div class="feed ${stale ? "stale" : ""}"><div class="bar"><i style="width:${stale ? 100 : fill}%"></i></div><span class="num">${text}</span></div>`;
-}
 function topHTML(g, v, now){
   const c = S.cursor, last = v.last;
   const gclock = last ? `${qLabel(last.period)} ${esc(last.clock)}` : "Pregame";
@@ -727,10 +710,9 @@ function topHTML(g, v, now){
         <span class="sep">–</span>
         <span class="t"><span class="poss ${possSide==="home"?"on":""}" aria-label="${possSide==="home"?"has the ball":""}"></span><span class="pts">${v.score.home}</span><span class="ab">${esc(g.home.abbr)}</span>${teamDot(g.home)}</span>
       </div>
-      <div class="status">${statusPill(c, now, g)}<span class="gclock num">${gclock}</span></div>
+      <div class="status">${statusPill(c, now, g)}<span class="gclock num">${gclock}</span>${g.state !== "post" && S.fetchedAt ? `<span class="fresh num">updated ${fmtDur(now - S.fetchedAt)} ago</span>` : ""}</div>
     </div>
     ${seriesHTML(g, v.series)}
-    ${g.state === "in" ? feedLine(g, now) : ""}
     <div class="next"><div class="what"><div class="label">Next snap</div>${nextLine}</div></div>
     <div class="btns">
       <button class="tb" data-act="prevDrive" ${disPrev}>‹‹<small>Drive</small></button>
@@ -969,7 +951,7 @@ async function refreshGame(first){
     const j = await loadGame(id);
     if (S.gameId !== id) return;
     const g = parseSummary(j);
-    S.game = g; S.gameErr = null; S.fetchedAt = Date.now(); S.feedErr = null;
+    S.game = g; S.gameErr = null; S.fetchedAt = Date.now();
     if (first) {
       const saved = store.get(cursorKey(id), null);
       S.cursor = saved && (saved.live || Number.isFinite(saved.T)) ? saved
@@ -978,8 +960,7 @@ async function refreshGame(first){
     paint(true);
   } catch (err) {
     if (S.gameId !== id) return;
-    const msg = err.name === "AbortError" ? "The feed timed out" : (err.message || "The feed is unreachable");
-    if (!S.game) { S.gameErr = msg; paint(true); } else { S.feedErr = msg; }
+    if (!S.game) { S.gameErr = err.name === "AbortError" ? "The feed timed out" : (err.message || "The feed is unreachable"); paint(true); }
   }
 }
 
@@ -994,7 +975,7 @@ document.getElementById("saveBase").addEventListener("click", () => {
 setInterval(() => { if (S.view === "game" && S.game && S.scrub == null) paint(false); }, 1000);
 // Poll every 15 s until the game is final. Phones pause timers in the background,
 // so also refresh as soon as the page becomes visible again.
-setInterval(() => { if (S.view === "game" && S.game && S.game.state !== "post" && !document.hidden) refreshGame(false); }, POLL_MS);
+setInterval(() => { if (S.view === "game" && S.game && S.game.state !== "post" && !document.hidden) refreshGame(false); }, 15000);
 const wake = () => { if (document.hidden) return; if (S.view === "game" && S.gameId) refreshGame(false); else if (S.view === "games") refreshBoard(); };
 document.addEventListener("visibilitychange", wake);
 window.addEventListener("pageshow", wake);
