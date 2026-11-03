@@ -687,10 +687,6 @@ function scrubTip(g, n){
 }
 function bodyHTML(g, v){
   const sit = v.situation;
-  const watch = `<section class="card watch">
-    <div class="sechead"><h2>What to watch</h2><span class="label">${sit.kind === "snap" ? esc(g[sit.side].abbr) + " ball" : ""}</span></div>
-    <div class="sit">${esc(sit.text)}</div>
-    <ul>${sit.tips.map(t => `<li>${esc(t)}</li>`).join("")}</ul></section>`;
   const A = v.away, H = v.home;
   const splitBar = t => { const tot = t.runs + t.drop; return tot ? `<div class="split"><i style="width:${100*t.runs/tot}%;background:var(--run)"></i><i style="width:${100*t.drop/tot}%;background:var(--pass)"></i></div>` : ""; };
   const res = t => [["td","TD"],["fg","FG"],["punt","P"],["to","TO"],["miss","X"]].filter(([k]) => t[k]).map(([k,l]) => `<span class="badge b-${k}">${t[k]} ${l}</span>`).join("") || "–";
@@ -721,7 +717,7 @@ function bodyHTML(g, v){
   }).join("");
   const log = `<section><div class="sechead"><h2>Drives</h2><span class="label">newest first · tap for plays</span></div>
     ${v.drives.length ? drives : `<p class="empty card">No plays yet at this point in the game.</p>`}</section>`;
-  return watch + stats + log;
+  return stats + log;
 }
 function boxHTML(d){
   const b = driveBox(d.plays);
