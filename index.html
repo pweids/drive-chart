@@ -111,6 +111,7 @@ table.ts{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
 .ts th:first-child,.ts td:first-child{text-align:left;color:var(--muted);font-weight:400}
 .ts thead th{font-family:var(--display);font-weight:700;font-size:16px;color:var(--ink)}
 .ts tr:last-child td{border-bottom:0}
+.ts .sub{color:var(--muted);font-size:13px}
 .split{display:flex;height:6px;border-radius:3px;overflow:hidden;background:var(--line);margin-top:3px;margin-left:auto;max-width:90px}
 .split i{display:block;height:100%}
 .res-row{display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap}
@@ -373,6 +374,17 @@ function settle(c, now){ // a running cursor that catches real time becomes live
   return !c.live && c.running && vtime(c, now) >= now ? LIVE : c;
 }
 
+function ownYardLine(p){
+  // Read the spot from the down text ("1st & 10 at CHI 28"): own side -> 28, opponent's 40 -> 60.
+  const m = /\bat\s+(?:([A-Z]{2,4})\s+)?(\d{1,2})\b/.exec(p.dd || "");
+  if (m) {
+    const n = +m[2];
+    if (!m[1] || n === 50) return n;
+    return m[1] === p.offAbbr ? n : 100 - n;
+  }
+  return Number.isFinite(p.ytg) ? 100 - p.ytg : null;
+}
+
 /* ---------- view model (pure) ---------- */
 function buildView(g, n){
   const shown = g.plays.slice(0, n);
@@ -401,7 +413,11 @@ function buildView(g, n){
     const firsts = ds.reduce((a, d) => a + driveBox(d.plays).firsts, 0);
     const done = ds.filter(d => d.done);
     const count = k => done.filter(d => d.cat === k).length;
-    return { drives: ds.length, td: count("td"), fg: count("fg"), punt: count("punt"), to: count("to"), miss: count("miss"),
+    const sacks = off.filter(p => /sack/i.test(p.typeText));
+    // Red zone trip: the drive snapped a play at the opponent's 20 or closer (own yard line 80+).
+    const rz = ds.filter(d => d.plays.some(p => (isOffense(p.kind) || p.kind === "penalty" || /field goal/i.test(p.typeText)) && (ownYardLine(p) ?? 0) >= 80));
+    const rzTD = rz.filter(d => d.cat === "td").length;
+    return { sacks: sacks.length, sackYds: sacks.reduce((a,p)=>a+p.yards,0), rz: rz.length, rzTD, drives: ds.length, td: count("td"), fg: count("fg"), punt: count("punt"), to: count("to"), miss: count("miss"),
       runs: runs.length, runYds: runs.reduce((a,p)=>a+p.yards,0), drop: pass.length, passYds: pass.reduce((a,p)=>a+p.yards,0),
       succ, graded: graded.length, third: third.length, conv,
       ypp: off.length ? off.reduce((a,p)=>a+p.yards,0) / off.length : null, boom: off.filter(explosive).length, series, firsts };
@@ -774,6 +790,8 @@ function bodyHTML(g, v){
         ${row("1st downs / series", t => t.series ? `${t.firsts} / ${t.series}` : "–")}
         ${row("3rd down", t => t.third ? `${t.conv}/${t.third}` : "–")}
         ${row("Explosive ★", t => t.boom)}
+        ${row("Sacks taken", t => t.sacks ? `${t.sacks} <span class="sub">(${t.sackYds} yds)</span>` : "0")}
+        ${row("Red zone TD", t => t.rz ? `${t.rzTD}/${t.rz} <span class="sub">${pct(t.rzTD, t.rz)}</span>` : "–")}
       </tbody></table></div></section>`;
   const drives = v.drives.slice().reverse().map(d => {
     const t = g[d.side], open = S.open.has(d.id);
@@ -791,16 +809,6 @@ function bodyHTML(g, v){
   return stats + log;
 }
 // Band that opens a set of downs.
-function ownYardLine(p){
-  // Read the spot from the down text ("1st & 10 at CHI 28"): own side -> 28, opponent's 40 -> 60.
-  const m = /\bat\s+(?:([A-Z]{2,4})\s+)?(\d{1,2})\b/.exec(p.dd || "");
-  if (m) {
-    const n = +m[2];
-    if (!m[1] || n === 50) return n;
-    return m[1] === p.offAbbr ? n : 100 - n;
-  }
-  return Number.isFinite(p.ytg) ? 100 - p.ytg : null;
-}
 function seriesBand(p){
   // Yard line as the TV shows it (1-50), tagged with whose half: CHI ball at CHI 28 -> OWN 28, at SEA 31 -> OPP 31.
   const own = ownYardLine(p);
