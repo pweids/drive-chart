@@ -130,6 +130,7 @@ table.ts{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
 .play .dn.d1{color:var(--muted)}
 .play .k{grid-row:span 2;align-self:start;margin-top:2px;font-family:var(--display);font-weight:700;font-size:11px;letter-spacing:.06em;padding:1px 5px;border-radius:4px;border:1px solid currentColor;min-width:38px;text-align:center}
 .k-run{color:var(--run)}.k-pass{color:var(--pass)}
+.k-good{color:var(--td)}
 .k-inc{color:var(--muted);border-style:dashed!important}.k-int,.k-sack{color:var(--to)}.k-scramble{color:var(--pass)}
 .play.inc .id .y{color:var(--muted);font-weight:500}.k-special,.k-penalty,.k-other,.k-admin{color:var(--muted)}
 .play .id{font-family:var(--display);font-weight:600;font-size:14px}
@@ -368,6 +369,23 @@ function ownYardLine(p){
   return Number.isFinite(p.ytg) ? 100 - p.ytg : null;
 }
 
+function fgGood(p){
+  const t = p.typeText.toLowerCase(), x = p.text.toLowerCase();
+  return /field goal good/.test(t) || (/field goal/.test(t) && !/missed|blocked|no good/.test(t) && /\bis good\b/.test(x));
+}
+// The drive result implied by a play, or null if the drive continues (pure).
+function terminalResult(p){
+  if (!p) return null;
+  const t = p.typeText.toLowerCase();
+  if (/field goal/.test(t)) return fgGood(p) ? ["Field Goal", "FG"] : ["Missed FG", "MISSED FG"];
+  if (/punt/.test(t)) return ["Punt", "PUNT"];
+  if (/touchdown/.test(t) || (p.scoring && /touchdown/i.test(p.text))) return ["Touchdown", "TD"];
+  if (/interception/.test(t)) return ["Interception", "INT"];
+  if (/fumble recovery \(opponent\)|fumble return/.test(t)) return ["Fumble", "FUMBLE"];
+  if (/safety/.test(t)) return ["Safety", "SAFETY"];
+  if (p.down === 4 && isOffense(p.kind) && p.dist != null && p.yards < p.dist && !p.scoring) return ["Downs", "DOWNS"];
+  return null;
+}
 /* ---------- view model (pure) ---------- */
 function buildView(g, n){
   const shown = g.plays.slice(0, n);
@@ -377,12 +395,16 @@ function buildView(g, n){
     teamNo[d.side] = (teamNo[d.side] || 0) + 1;
     const no = teamNo[d.side], gameNo = i + 1;
     const ps = g.plays.slice(d.first, Math.min(d.last + 1, n));
-    const done = d.last < n && !d.isCurrent;
+    // ESPN keeps a drive "current" until the next one starts, so also end it on a terminal play.
+    const lastReal = [...ps].reverse().find(p => p.kind !== "admin");
+    const term = terminalResult(lastReal);
+    const done = (d.last < n && !d.isCurrent) || !!term;
     const off = ps.filter(p => isOffense(p.kind));
     const runs = off.filter(p => p.kind === "run").length;
     return { ...d, no, gameNo, plays: ps, done, snaps: off.length, runs, passes: off.length - runs,
-      yards: off.reduce((a, p) => a + p.yards, 0), cat: done ? cat(d.short || d.result) : "live",
-      label: done ? (d.short || d.result || "END").toUpperCase() : "ON FIELD" };
+      yards: off.reduce((a, p) => a + p.yards, 0), cat: done ? cat(d.short || d.result || term?.[1]) : "live",
+      result: d.result || term?.[0] || "",
+      label: done ? (d.short || d.result || term?.[1] || "END").toUpperCase() : "ON FIELD" };
   });
   const team = side => {
     const off = shown.filter(p => p.side === side && isOffense(p.kind));
@@ -735,13 +757,11 @@ function topHTML(g, v, now){
 function seriesHTML(g, s){
   if (!s) return "";
   const rows = s.plays.map(p => {
-    const pr = passResult(p);
-    const k = pr ? { int: "INT", sack: "SACK", scramble: "SCRM", inc: "INC", comp: "PASS" }[pr]
-      : { run: "RUN", penalty: "FLAG", special: "KICK", other: "—" }[p.kind] || "—";
+    const pr = passResult(p), [k, kcls] = playTag(p);
     const ok = isOffense(p.kind) && p.down && p.dist != null ? success(p) : null;
     const y = (explosive(p) ? '<span class="star" title="Explosive play">★</span>' : "") + (pr === "inc" ? "inc" : pr === "int" ? "int" : isOffense(p.kind) ? `${p.yards > 0 ? "+" : ""}${p.yards}` : "");
     const dd = (p.dd || "").replace(/ at .*/, "");
-    return `<div class="srow ${ok == null ? "" : ok ? "ok" : "no"}"><span class="k ${pr && pr !== "comp" ? "k-" + pr : "k-" + p.kind}">${k}</span><span class="sdd num">${esc(dd)}</span><span class="stx">${esc(p.text)}</span><span class="sy num">${y}</span></div>`;
+    return `<div class="srow ${ok == null ? "" : ok ? "ok" : "no"}"><span class="k ${kcls}">${k}</span><span class="sdd num">${esc(dd)}</span><span class="stx">${esc(p.text)}</span><span class="sy num">${y}</span></div>`;
   }).join("");
   const which = `${esc(g[s.side].abbr)} drive ${s.no} <span style="font-weight:500">(game drive ${s.gameNo})</span>`;
   const head = s.done ? `Last series · ${which} · <span class="badge b-${s.cat}">${esc(s.label)}</span>` : `This series · ${which}`;
@@ -834,12 +854,23 @@ function emptyHTML(g, v){
   return `<div class="empty card"><p style="margin:0 0 10px"><b>${what}.</b> You're at kickoff, so nothing is revealed yet.</p>
     <div class="jump" style="justify-content:center"><button type="button" data-act="next">Step from kickoff</button><button type="button" data-act="live">Show all plays</button></div></div>`;
 }
-function playHTML(p){
+// Short tag and color class for a play (pure).
+function playTag(p){
   const pr = passResult(p);
-  const k = pr ? { int: "INT", sack: "SACK", scramble: "SCRM", inc: "INC", comp: "PASS" }[pr]
-    : { run: "RUN", penalty: "FLAG", special: "KICK", admin: "—", other: "—" }[p.kind];
+  if (pr) return [{ int: "INT", sack: "SACK", scramble: "SCRM", inc: "INC", comp: "PASS" }[pr], pr === "comp" ? "k-pass" : "k-" + pr];
+  if (p.kind === "special") {
+    const t = p.typeText.toLowerCase(), x = p.text.toLowerCase();
+    if (/field goal/.test(t)) return fgGood(p) ? ["FG ✓", "k-good"] : ["FG ✗", "k-int"];
+    if (/extra point/.test(t)) return /no good|blocked|missed/.test(x) ? ["XP ✗", "k-int"] : ["XP ✓", "k-good"];
+    if (/punt/.test(t)) return ["PUNT", "k-special"];
+    if (/kickoff/.test(t)) return ["KO", "k-special"];
+    return ["KICK", "k-special"];
+  }
+  return [{ run: "RUN", penalty: "FLAG", admin: "—", other: "—" }[p.kind] || "—", "k-" + p.kind];
+}
+function playHTML(p){
+  const pr = passResult(p), [k, cls] = playTag(p);
   const y = (explosive(p) ? '<span class="star" title="Explosive play">★</span>' : "") + (pr === "inc" ? "inc" : pr === "int" ? "int" : isOffense(p.kind) ? `${p.yards > 0 ? "+" : ""}${p.yards}` : "");
-  const cls = pr && pr !== "comp" ? `k-${pr}` : `k-${p.kind}`;
   const ok = isOffense(p.kind) && p.down && p.dist != null ? success(p) : null;
   const mark = ok == null ? "" : ok ? "ok" : "no";
   return `<div class="play ${p.scoring ? "sc" : ""} ${pr === "inc" ? "inc" : ""} ${mark}"${mark ? ` title="${ok ? "Successful play" : "Unsuccessful play"}"` : ""}><span class="dn d${p.down || 0}" aria-label="${p.down ? "Down " + p.down : ""}">${p.down && isOffense(p.kind) || p.kind === "penalty" ? p.down || "" : p.down && p.kind === "special" ? p.down : ""}</span><span class="k ${cls}">${k}</span>
